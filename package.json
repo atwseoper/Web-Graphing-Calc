@@ -1,0 +1,17 @@
+{
+  "name": "web-graphing-calc",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Self-contained single-file 2D graphing calculator web app",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build/build.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "dev": "node build/serve.mjs src",
+    "preview": "node build/build.mjs && node build/serve.mjs dist"
+  }
+}

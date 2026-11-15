@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<!--
+Web Graphing Calculator __BUILD_INFO__
+https://github.com/atwseoper/web-graphing-calc
+Licensed under the PolyForm Noncommercial License 1.0.0
+https://polyformproject.org/licenses/noncommercial/1.0.0
+Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
+-->
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)">
+  <title>Graphing Calculator</title>
+  <link rel="stylesheet" href="styles/theme.css">
+  <link rel="stylesheet" href="styles/layout.css">
+</head>
+<body>
+  <div id="app">
+    <main id="graph" aria-label="Graph">
+      <canvas id="graph-canvas"></canvas>
+    </main>
+
+    <section id="panel" aria-label="Controls">
+      <div class="panel-handle" aria-hidden="true"></div>
+      <div class="panel-body">
+        <div id="tab-graph" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-graph">
+          <p class="placeholder">Expressions will appear here.</p>
+        </div>
+        <div id="tab-solve" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-solve" hidden>
+          <p class="placeholder">Equation solver – Phase 2.</p>
+        </div>
+        <div id="tab-data" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-data" hidden>
+          <p class="placeholder">Data import and regression – Phase 3.</p>
+        </div>
+        <div id="tab-calc" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-calc" hidden>
+          <p class="placeholder">Calculator – Phase 1.</p>
+        </div>
+      </div>
+      <nav class="tab-bar" role="tablist" aria-label="Tools">
+        <button role="tab" id="tab-btn-graph" aria-controls="tab-graph" aria-selected="true">Graph</button>
+        <button role="tab" id="tab-btn-solve" aria-controls="tab-solve" aria-selected="false">Solve</button>
+        <button role="tab" id="tab-btn-data" aria-controls="tab-data" aria-selected="false">Data</button>
+        <button role="tab" id="tab-btn-calc" aria-controls="tab-calc" aria-selected="false">Calc</button>
+      </nav>
+      <footer class="build-info">__BUILD_INFO__ · <a href="https://github.com/atwseoper/web-graphing-calc/blob/main/LICENSE.md">Non-commercial licence</a></footer>
+    </section>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
