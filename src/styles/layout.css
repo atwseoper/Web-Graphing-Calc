@@ -1,7 +1,7 @@
 /* Portrait phone first: graph on top, panel (bottom sheet) below. */
 #app {
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100dvh;
   overflow: hidden;
 }
@@ -16,38 +16,59 @@
   width: 100%;
   height: 100%;
   touch-action: none;
+  cursor: grab;
 }
+#graph-canvas:active { cursor: grabbing; }
 
 #panel {
+  --keypad-h: 276px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  height: 42dvh;
+  height: var(--sheet-h, 42dvh);
+  max-height: calc(100dvh - 72px);
   background: var(--surface);
   border-radius: var(--radius) var(--radius) 0 0;
   box-shadow: var(--shadow);
   padding-bottom: env(safe-area-inset-bottom);
+  z-index: 2;
 }
+#panel.is-animating { transition: height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+#panel.keypad-open { height: max(var(--sheet-h, 42dvh), calc(var(--keypad-h) + 190px)); }
+#panel.keypad-open .tab-bar { display: none; }
 
 .panel-handle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.panel-handle span {
   width: 40px;
   height: 5px;
-  margin: 8px auto 4px;
   border-radius: 3px;
   background: var(--border);
 }
 
 .panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 8px 16px;
+  overscroll-behavior: contain;
 }
+
+.tab-panel { min-height: 100%; }
 
 .placeholder {
   color: var(--text-muted);
-  margin: 12px 0;
+  margin: 16px;
+  line-height: 1.45;
 }
 
 .tab-bar {
+  flex: none;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   border-top: 1px solid var(--border);
@@ -58,9 +79,8 @@
   border: 0;
   background: none;
   color: var(--text-muted);
-  font: inherit;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -69,43 +89,29 @@
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
-.build-info {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 2px 0 4px;
-}
-
-.build-info a {
-  color: inherit;
-}
-
 /* Landscape tablet / desktop: side panel on the left, graph on the right. */
 @media (min-width: 720px) and (orientation: landscape) {
   #app {
     grid-template-rows: none;
-    grid-template-columns: minmax(320px, 380px) 1fr;
+    grid-template-columns: minmax(340px, 400px) 1fr;
   }
-  #panel {
+  #panel,
+  #panel.keypad-open {
     grid-row: 1;
     grid-column: 1;
     height: 100dvh;
+    max-height: none;
     border-radius: 0;
     box-shadow: none;
     border-right: 1px solid var(--border);
   }
-  #graph {
-    grid-column: 2;
-  }
-  .panel-handle {
-    display: none;
-  }
+  #graph { grid-column: 2; }
+  .panel-handle { display: none; }
   .tab-bar {
     order: -1;
     border-top: 0;
     border-bottom: 1px solid var(--border);
   }
-  .tab-bar button[aria-selected="true"] {
-    box-shadow: inset 0 -2px 0 var(--accent);
-  }
+  #panel.keypad-open .tab-bar { display: grid; }
+  .tab-bar button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--accent); }
 }

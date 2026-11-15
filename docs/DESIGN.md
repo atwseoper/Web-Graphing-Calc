@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v0.3 – scope agreed, Phase 0 in progress · **Updated:** 15 November 2026
+**Status:** v0.4 – Phase 1 (core graphing) complete · **Updated:** 15 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -17,6 +17,10 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D7 | Source is in the public GitHub repo `atwseoper/web-graphing-calc`. It is deployed to GitHub Pages by GitHub Actions on every push to `main`. | 15 Nov 2026 |
 | D8 | Licence: PolyForm Noncommercial 1.0.0. Free for personal and non-commercial use; commercial use is not permitted. | 15 Nov 2026 |
 | D9 | No npm dependencies at all, including dev tooling. A small in-house bundler (`build/bundle.mjs`) replaces esbuild, and tests use Node's built-in runner. | 15 Nov 2026 |
+| D10 | User variables and functions have single-letter names (optionally subscripted, `a_1`). This makes implicit multiplication unambiguous: `xy` = x·y, `sinx` = sin(x). | 15 Nov 2026 |
+| D11 | Implicit multiplication has the same precedence as `*` and `/`, evaluated left to right, so `1/2x` = (1/2)·x. | 15 Nov 2026 |
+| D12 | Errors in the row being typed are shown only after a short pause, so half-typed expressions don't flash warnings. Graphs update on every keystroke. | 15 Nov 2026 |
+| D13 | Polar θ and parametric t ranges default to 0…2π (0…360 in degree mode). Each row can set its own range. | 15 Nov 2026 |
 
 ## 1. Purpose
 
@@ -187,12 +191,33 @@ build/
 ## 7. Phased delivery plan
 | Phase | Scope | Outcome |
 |---|---|---|
-| 0 – Skeleton | Repo, build, tests, CI/Pages, responsive shell, theme, static grid | Deployed empty shell, checked on a phone |
-| 1 – Core graphing | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
+| 0 – Skeleton ✅ | Repo, build, tests, CI/Pages, responsive shell, theme, static grid | Deployed empty shell, checked on a phone |
+| 1 – Core graphing ✅ | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
 | 2 – Analysis & Solve | Roots, intersections, extrema, integrals, sliders, derivatives, solver tab | Parity with a handheld |
 | 3 – Data & Fit | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
 | 4 – Polish & extras | Undo, sharing, help, PNG export, then optional P3 items | Release |
 
-## 8. Open questions
+## 8. Expression syntax (as implemented)
+
+| Input | Meaning |
+|---|---|
+| `y = f(x)`, or just `f(x)` | Graph of y against x |
+| `x = g(y)` | Graph of x against y (sideways curves, vertical lines) |
+| `r = f(θ)` | Polar graph; type `theta` or use the θ key |
+| `(f(t), g(t))` | Parametric curve |
+| `(a, b)` | Point |
+| `a = 3`, `b = 2a` | Variables, usable in every row and in the Calc tab |
+| `f(x) = x^2` | Function; plotted when its parameter is x. Multi-parameter functions such as `g(u, v) = …` also work |
+| `3 + 4`, `f(2)` | Evaluated in place: `= 7` |
+
+- Rows can be in any order. Duplicate and circular definitions are reported on every affected row.
+- Precedence: `+ −` < `× ÷` and implicit multiplication < unary minus < `^` (right-associative) < `!`. So `-x^2` = −(x²) and `2^3^2` = 2⁹.
+- Functions without brackets take the following product of non-function factors: `sin 2x` = sin(2x), `sin x cos x` = sin(x)·cos(x). `sin^2 x` = (sin x)², `sin^-1 x` = asin(x).
+- `x2` and `2 3` are errors (missing operator), not 2x or 23.
+- A negative base with a fractional exponent p/q (q odd) gives the real root: `(-8)^(1/3)` = −2, so `x^(1/3)` graphs for negative x.
+- `sin(π)` shows as 0, and degree mode gives exact values at standard angles (`sin(30)` = 0.5).
+- Built-in functions: sin cos tan sec csc cot asin acos atan (also arcsin…), sinh cosh tanh asinh acosh atanh, exp ln log (log(x, b) for base b), sqrt cbrt abs floor ceil round (round(x, n)), sign min max mod gamma nCr nPr, and postfix `!`. Constants: π (`pi`), e.
+
+## 9. Open questions
 1. CSV files with decimal commas (common in European exports): support now, or only if needed?
 2. Which P3 extras (inequalities, implicit curves, slope fields, non-linear systems, home-screen install) to keep?

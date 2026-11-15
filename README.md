@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: early development (Phase 0 – project skeleton). See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: Phase 1 complete – core graphing works (Cartesian, x = g(y), polar, parametric, points, variables and functions, trace, table of values, calculator, on-screen keypad, auto-save). Next: Phase 2, analysis and the equation solver. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Planned features
 

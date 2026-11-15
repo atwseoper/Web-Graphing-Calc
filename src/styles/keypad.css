@@ -1,0 +1,71 @@
+.keypad {
+  flex: none;
+  padding: 6px 6px 8px;
+  background: var(--keypad-bg);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.keypad-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.bar-spacer { flex: 1; }
+
+.keypad-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.key {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--key-bg);
+  color: var(--key-text);
+  font-size: 1.1rem;
+  font-weight: 500;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+.key svg { width: 20px; height: 20px; }
+.key.op { background: var(--key-op-bg); }
+.key.var { font-style: italic; font-family: Georgia, "Times New Roman", serif; font-size: 1.25rem; }
+.keys-left .key { font-size: 1rem; }
+.key.is-pressed { filter: brightness(0.88); transform: translateY(1px); }
+
+.bar-key {
+  height: 38px;
+  padding: 0 12px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.bar-key[aria-pressed="true"] {
+  background: var(--key-bg);
+  color: var(--key-text);
+}
+.bar-key.enter {
+  min-width: 56px;
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .key { height: 44px; }
+}

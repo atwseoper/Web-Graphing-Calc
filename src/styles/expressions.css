@@ -1,0 +1,180 @@
+.expr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.expr-row {
+  --row-color: var(--accent);
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: start;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+}
+.expr-row:focus-within {
+  border-left-color: var(--row-color);
+  background: var(--surface-2);
+}
+.expr-row.has-error:focus-within { border-left-color: var(--error); }
+
+.row-left {
+  display: grid;
+  place-items: center;
+  height: 52px;
+}
+
+.swatch {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  position: relative;
+}
+.swatch::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  background: var(--row-color);
+  border: 2.5px solid var(--row-color);
+  transition: background 0.12s;
+}
+.expr-row.is-hidden .swatch::before { background: transparent; }
+
+.row-num {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.expr-main {
+  min-width: 0;
+  padding: 0 0 6px;
+}
+
+.expr-input {
+  display: block;
+  width: 100%;
+  height: 52px;
+  padding: 0 4px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 18px; /* 16px+ stops iOS zooming on focus */
+  letter-spacing: 0.01em;
+}
+.expr-input::placeholder { color: var(--text-muted); opacity: 0.7; font-size: 16px; }
+.expr-row.is-hidden .expr-input { color: var(--text-muted); }
+
+.expr-status {
+  margin: -8px 4px 4px;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.expr-status.is-value {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--text);
+  text-align: right;
+}
+.expr-status.is-error {
+  color: var(--error);
+}
+.expr-status.is-error::before {
+  content: "⚠ ";
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding-right: 2px;
+}
+.row-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.75;
+}
+.row-btn svg { width: 18px; height: 18px; }
+.row-btn:hover { opacity: 1; color: var(--text); }
+.row-btn[aria-pressed="true"] { color: var(--accent); opacity: 1; }
+
+/* Domain (θ or t range) */
+.expr-domain { margin: 0 4px 6px; }
+.domain-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.dom-var { font-weight: 600; color: var(--text); }
+.le { font-size: 0.9rem; }
+
+.mini-input {
+  width: 72px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  text-align: center;
+}
+.mini-input:focus { border-color: var(--accent); outline: none; }
+
+/* Table of values */
+.expr-table { margin: 2px 4px 8px; }
+.table-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.table-controls label { display: flex; align-items: center; gap: 6px; }
+.expr-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.expr-table th {
+  text-align: left;
+  padding: 4px 8px;
+  font-family: var(--font);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.expr-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.expr-table td:first-child, .expr-table th:first-child { width: 40%; }
+
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+.add-row svg { width: 20px; height: 20px; }
