@@ -21,6 +21,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D11 | Implicit multiplication has the same precedence as `*` and `/`, evaluated left to right, so `1/2x` = (1/2)·x. | 15 Nov 2026 |
 | D12 | Errors in the row being typed are shown only after a short pause, so half-typed expressions don't flash warnings. Graphs update on every keystroke. | 15 Nov 2026 |
 | D13 | Polar θ and parametric t ranges default to 0…2π (0…360 in degree mode). Each row can set its own range. | 15 Nov 2026 |
+| D14 | Calc and Solve are full-page tabs (no graph). Graph and Data keep the graph visible, because Data's fitted curves need it. Solve will get a "Show on graph" action in Phase 2. | 15 Nov 2026 |
 
 ## 1. Purpose
 
@@ -138,7 +139,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 - The graph fills the top of the screen, with floating controls at its edges (zoom-to-fit, home, Cartesian/polar, settings).
 - A bottom sheet holds the expression list, with snap heights peek / half / full; the graph resizes live.
 - The keypad slides up when a row is focused, and the sheet keeps the active row visible.
-- Tabs: **Graph · Solve · Data · Calc**. The graph stays visible while the sheet's contents change.
+- Tabs: **Graph · Solve · Data · Calc**. Graph and Data show the graph above the sheet; Calc and Solve use the whole screen (D14).
 - Results appear as tappable chips on the graph and as cards in the sheet.
 
 ### 4.2 Landscape tablet / desktop

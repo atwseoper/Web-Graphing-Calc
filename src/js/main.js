@@ -125,10 +125,14 @@ $('graph').addEventListener('pointerdown', () => {
 
 // ---- tabs ---------------------------------------------------------------------------------
 const tabButtons = [...document.querySelectorAll('[role="tab"]')];
+// Tabs that use the whole screen (no graph). Graph and Data keep the graph visible.
+const FULL_PAGE_TABS = new Set(['calc', 'solve']);
+const appEl = $('app');
 for (const tab of tabButtons) {
   tab.addEventListener('click', () => store.update((s) => ({ ...s, ui: { ...s.ui, tab: tab.dataset.tab } })));
 }
 function renderTabs(state) {
+  appEl.classList.toggle('full-panel', FULL_PAGE_TABS.has(state.ui.tab));
   for (const t of tabButtons) {
     const selected = t.dataset.tab === state.ui.tab;
     t.setAttribute('aria-selected', String(selected));

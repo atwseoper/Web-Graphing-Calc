@@ -48,6 +48,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
   // ---- sizing --------------------------------------------------------------------
   function resize() {
     const rect = canvas.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return; // hidden (full-page tab): keep the view as it was
     const w = Math.max(1, Math.round(rect.width));
     const hgt = Math.max(1, Math.round(rect.height));
     const dpr = window.devicePixelRatio || 1;
