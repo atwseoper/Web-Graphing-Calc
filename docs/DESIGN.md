@@ -139,7 +139,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 - The graph fills the top of the screen, with floating controls at its edges (zoom-to-fit, home, Cartesian/polar, settings).
 - A bottom sheet holds the expression list, with snap heights peek / half / full; the graph resizes live.
 - The keypad slides up when a row is focused, and the sheet keeps the active row visible.
-- Tabs: **Graph · Solve · Data · Calc**. Graph and Data show the graph above the sheet; Calc and Solve use the whole screen (D14).
+- Tabs: **Graph · Data · Solve · Calc**. Graph and Data show the graph above the sheet; Solve and Calc use the whole screen (D14). Tabs with the graph come first, so moving through them doesn't make the graph flick on and off.
 - Results appear as tappable chips on the graph and as cards in the sheet.
 
 ### 4.2 Landscape tablet / desktop
