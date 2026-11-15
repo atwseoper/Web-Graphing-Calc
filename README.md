@@ -2,7 +2,7 @@
 
 A modern 2D graphing calculator that ships as **one self-contained HTML file**. It works offline, with no dependencies, and is designed for portrait phones first, then landscape tablets and desktops.
 
-**Live:** https://atwseoper.github.io/web-graphing-calc/
+**Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
 Status: early development (Phase 0 – project skeleton). See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
