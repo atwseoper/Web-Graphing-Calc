@@ -32,6 +32,11 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D22 | Help is a "?" button in the tab bar, opening a dialog on the page for the current screen (Graph, Data, Solve, Calc, plus Typing). Solve also shows a one-line description of each mode under the mode buttons. Moved forward from Phase 4. | 16 Nov 2026 |
 | D23 | Symbols on a computer keyboard: typing theta, pi, <= and >= turns them into θ, π, ≤, ≥ as you type. A keypad button in the tab bar (hidden on touch-first devices) switches the on-screen keypad on or off. | 16 Nov 2026 |
 | D24 | The keypad's {} page swaps sec (still typeable) for an Ans key. A capital R, Y or X where the graph letter was meant gets a specific error ("use a lowercase r"); names stay case-sensitive. | 16 Nov 2026 |
+| D25 | Decimal commas are supported in data, not in expressions. CSV/paste import detects the decimal separator (and thousands separators) with a manual override, and data-table cells accept `3,14` as well as `3.14`. Expressions keep the dot, because the comma separates arguments. | 16 Nov 2026 |
+| D26 | The Data tab holds several named data sets, each with its own colour and show/hide, and each can carry any number of fits drawn together for comparison. Visible data sets and fits are drawn on the graph in every tab that shows it. | 16 Nov 2026 |
+| D27 | Built-in models: line, polynomial (degree 2–6), exponential a·e^(bx), power a·x^b, logarithmic a + b·ln x, logistic c / (1 + a·e^(−bx)), sinusoidal a·sin(bx + c) + d, Gaussian a·e^(−(x−b)²/(2c²)), plus custom models. In a custom model the parameters are the letters not defined in the Graph tab (defined ones are fixed constants). A model that is linear in its parameters (checked symbolically) is solved exactly by QR; any other model by Levenberg–Marquardt. | 16 Nov 2026 |
+| D28 | Imported cells that aren't numbers are listed in the import preview and kept as blank table cells for the user to fix; rows with a blank x or y are left out of fits. | 16 Nov 2026 |
+| D29 | Phase 3 is delivered as three pull requests (data import and table; linear fits and statistics; non-linear fits, bands, residuals, weights and export), each merged once tests and the build pass. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -243,6 +248,6 @@ build/
 - Built-in functions: sin cos tan sec csc cot asin acos atan (also arcsin…), sinh cosh tanh asinh acosh atanh, exp ln log (log(x, b) for base b), sqrt cbrt abs floor ceil round (round(x, n)), sign min max mod gamma nCr nPr, and postfix `!`. Constants: π (`pi`), e.
 
 ## 9. Open questions
-1. CSV files with decimal commas (common in European exports): support now, or only if needed?
+1. ~~CSV files with decimal commas~~ – supported (D25).
 2. Which P3 extras (inequalities, implicit curves, slope fields, non-linear systems, home-screen install) to keep?
 3. Slider animation (play button) and a step setting: worth adding in Phase 4?

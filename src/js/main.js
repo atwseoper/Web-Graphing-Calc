@@ -8,6 +8,7 @@ import { createKeypad } from './ui/keypad.js';
 import { createSheet } from './ui/sheet.js';
 import { createCalcPanel } from './ui/calc-panel.js';
 import { createSolvePanel } from './ui/solve-panel.js';
+import { createDataPanel } from './ui/data-panel.js';
 import { createHelp } from './ui/help.js';
 import { symbolShortcut } from './expr/shortcuts.js';
 import { newRow, nextColor } from './state/defaults.js';
@@ -79,6 +80,10 @@ graph.onViewChange(debounce(() => exprList.refresh(), 250));
 createHelp({ backdrop: $('help'), openBtn: $('btn-help'), getTab: () => store.get().ui.tab });
 
 const solvePanel = createSolvePanel({ root: $('tab-solve'), store, getAnalysis, onShowOnGraph: showOnGraph });
+
+const dataPanel = createDataPanel({
+  root: $('tab-data'), store, getAnalysis, onFrame: (bounds) => graph.frameBounds(bounds),
+});
 
 const calc = createCalcPanel({
   historyEl: $('calc-history'), input: $('calc-input'), equalsBtn: $('calc-equals'),
@@ -203,11 +208,50 @@ function renderTabs(state) {
   }
 }
 
+// ---- data files: drag and drop, and pasting outside an input -------------------------------
+const showDataTab = () => store.update((s) => (s.ui.tab === 'data' ? s : { ...s, ui: { ...s.ui, tab: 'data' } }));
+const hasFiles = (e) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth++;
+  appEl.classList.add('is-dropping');
+});
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) appEl.classList.remove('is-dropping');
+});
+window.addEventListener('dragover', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  appEl.classList.remove('is-dropping');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  showDataTab();
+  dataPanel.openFile(file);
+});
+document.addEventListener('paste', (e) => {
+  const t = e.target;
+  if (store.get().ui.tab !== 'data' || (t instanceof HTMLElement && t.closest('input, textarea, [contenteditable]'))) return;
+  const text = e.clipboardData && e.clipboardData.getData('text/plain');
+  if (!text || !text.trim()) return;
+  e.preventDefault();
+  dataPanel.pasteText(text);
+});
+
 // ---- render loop ---------------------------------------------------------------------------
 function renderAll(state) {
   exprList.render(state, analysis);
   calc.render(state);
   solvePanel.render(state);
+  dataPanel.render(state);
   settings.render(state);
   keypadBtn.setAttribute('aria-pressed', String(state.settings.keypad === 'always'));
   renderTabs(state);

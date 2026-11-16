@@ -1,6 +1,10 @@
 // Saving and restoring state. serialize/deserialize are pure; load/save take a
 // Storage-like object (localStorage in the browser) so they can be tested.
-import { defaultState, defaultSolve, newRow, PALETTE, STATE_VERSION } from './defaults.js';
+import {
+  defaultState, defaultSolve, defaultData, newRow, newFit, FIT_MODELS, PALETTE, STATE_VERSION,
+} from './defaults.js';
+import { newDataSet, MAX_SETS } from '../data/table.js';
+import { MAX_POINTS } from '../data/csv.js';
 
 export const STORAGE_KEY = 'graphcalc:v1';
 const MAX_HISTORY = 100;
@@ -19,8 +23,22 @@ export function serialize(state) {
     settings: state.settings,
     calc: { history: state.calc.history.slice(-MAX_HISTORY) },
     solve: state.solve,
+    data: serializeData(state.data),
     ui: state.ui,
   });
+}
+
+// Points are stored as [x, y, σy, off] to keep saved data small.
+function serializeData(data) {
+  if (!data) return undefined;
+  return {
+    nextId: data.nextId,
+    active: data.active,
+    sets: data.sets.map((set) => ({
+      ...set,
+      points: set.points.map((p) => [p.x, p.y, p.s, p.off ? 1 : 0]),
+    })),
+  };
 }
 
 // Parse saved JSON, validating every field and falling back to defaults.
@@ -85,8 +103,68 @@ export function deserialize(json) {
     },
     calc: { history },
     solve: deserializeSolve(raw.solve),
+    data: deserializeData(raw.data),
     ui: { tab: oneOf(raw.ui && raw.ui.tab, ['graph', 'solve', 'data', 'calc'], 'graph') },
   };
+}
+
+const COLOR = /^#[0-9a-f]{6}$/i;
+const cell = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+function deserializeData(raw) {
+  const d = defaultData();
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sets)) return d;
+  const ids = new Set();
+  let maxId = 0;
+  const takeId = (id) => {
+    if (!Number.isInteger(id) || id < 1 || ids.has(id)) return null;
+    ids.add(id);
+    maxId = Math.max(maxId, id);
+    return id;
+  };
+  const sets = [];
+  for (const r of raw.sets.slice(0, MAX_SETS)) {
+    if (!r || typeof r !== 'object' || !Array.isArray(r.points)) continue;
+    const id = takeId(r.id);
+    if (id === null) continue;
+    const points = [];
+    for (const p of r.points.slice(0, MAX_POINTS)) {
+      if (!Array.isArray(p)) continue;
+      const s = cell(p[2]);
+      points.push({ x: cell(p[0]), y: cell(p[1]), s: s !== null && s > 0 ? s : null, off: p[3] === 1 });
+    }
+    const fits = [];
+    if (Array.isArray(r.fits)) {
+      for (const f of r.fits.slice(0, 20)) {
+        if (!f || typeof f !== 'object') continue;
+        const fid = takeId(f.id);
+        if (fid === null || !FIT_MODELS.includes(f.model)) continue;
+        const start = {};
+        if (f.start && typeof f.start === 'object') {
+          for (const [k, v] of Object.entries(f.start)) if (typeof v === 'string' && k.length <= 8) start[k] = v;
+        }
+        fits.push(newFit(fid, COLOR.test(f.color) ? f.color : PALETTE[fits.length % PALETTE.length], f.model, {
+          hidden: bool(f.hidden),
+          degree: Number.isInteger(f.degree) && f.degree >= 2 && f.degree <= 6 ? f.degree : 2,
+          custom: str(f.custom).slice(0, 500),
+          start,
+          weighted: bool(f.weighted, true),
+          bands: oneOf(f.bands, ['none', 'conf', 'both'], 'none'),
+          residuals: bool(f.residuals),
+        }));
+      }
+    }
+    sets.push(newDataSet(id, COLOR.test(r.color) ? r.color : PALETTE[sets.length % PALETTE.length], str(r.name).slice(0, 60) || `Data ${id}`, points, {
+      hidden: bool(r.hidden),
+      decimal: oneOf(r.decimal, ['point', 'comma'], 'point'),
+      xName: str(r.xName, 'x').slice(0, 40) || 'x',
+      yName: str(r.yName, 'y').slice(0, 40) || 'y',
+      hasSigma: bool(r.hasSigma),
+      fits,
+    }));
+  }
+  const active = sets.some((s) => s.id === raw.active) ? raw.active : sets.length ? sets[0].id : null;
+  return { sets, nextId: Math.max(Number.isInteger(raw.nextId) ? raw.nextId : 1, maxId + 1), active };
 }
 
 function deserializeSolve(raw) {
