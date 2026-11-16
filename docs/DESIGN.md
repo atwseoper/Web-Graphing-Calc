@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v0.5 – Phase 2 (analysis and solver) complete · **Updated:** 16 November 2026
+**Status:** v0.6 – Phase 3 (data and fitting) complete · **Updated:** 16 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -37,6 +37,9 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D27 | Built-in models: line, polynomial (degree 2–6), exponential a·e^(bx), power a·x^b, logarithmic a + b·ln x, logistic c / (1 + a·e^(−bx)), sinusoidal a·sin(bx + c) + d, Gaussian a·e^(−(x−b)²/(2c²)), plus custom models. In a custom model the parameters are the letters not defined in the Graph tab (defined ones are fixed constants). A model that is linear in its parameters (checked symbolically) is solved exactly by QR; any other model by Levenberg–Marquardt. | 16 Nov 2026 |
 | D28 | Imported cells that aren't numbers are listed in the import preview and kept as blank table cells for the user to fix; rows with a blank x or y are left out of fits. | 16 Nov 2026 |
 | D29 | Phase 3 is delivered as three pull requests (data import and table; linear fits and statistics; non-linear fits, bands, residuals, weights and export), each merged once tests and the build pass. | 16 Nov 2026 |
+| D30 | Weighted fits treat σy as absolute errors: Cov = (JᵀWJ)⁻¹ and 95% intervals use the normal quantile. The card reports χ², χ²/dof and P(χ²) and says when χ² disagrees with σy. Prediction bands are drawn for unweighted fits only. | 16 Nov 2026 |
+| D31 | In a custom model, a parameter letter followed by brackets multiplies: `a(1 − e^(−b x))` = a·(1 − e^(−b x)), and `a(x + 1)^2` = a·(x + 1)². (In Graph rows an undefined letter before brackets is still an unknown function.) | 16 Nov 2026 |
+| D32 | Custom models are fitted after a short pause in typing, and non-linear fits have a time budget (about 0.4 s) spread over several starts; a fit that stops early says so and offers starting values. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -178,12 +181,12 @@ src/
   js/
     main.js             entry point
     expr/               tokenizer, parser, compile, model, derive, print, polynomial, solve, format
-    numerics/           special, roots, minimise, analysis, integrate, poly, linalg; later stats (t, F quantiles), QR
-    data/               csv, table
-    fit/                linear, nonlinear (LM), models, report
+    numerics/           special, roots, minimise, analysis, integrate, poly, linalg, qr, stats
+    data/               number (decimal commas), csv, table
+    fit/                models, run (linear fits, statistics), nonlinear (LM), cache
     plot/               viewport, grid, sample-cartesian, sample-polar, render, interact
     state/              store, persist, history
-    ui/                 sheet, expr-list, graph-view, keypad, solve-panel, calc-panel, settings; later data-panel, fit-panel
+    ui/                 sheet, expr-list, graph-view, keypad, solve-panel, calc-panel, settings, data-panel, fit-panel, export
 tests/                  node:test unit tests
 build/
   bundle.mjs            zero-dependency ES-module bundler (restricted syntax subset)
@@ -194,7 +197,7 @@ build/
 
 **Testing:** pure modules have no DOM access and are unit-tested in Node. The build test checks that the output really is self-contained. Regression code is validated against NIST StRD certified values.
 
-**Size estimate:** P1 ≈ 2,500–3,500 lines; P1 + P2 ≈ 7,000–9,000 lines. Built file roughly 200–300 KB unminified (Phase 2: 268 KB).
+**Size estimate:** P1 ≈ 2,500–3,500 lines; P1 + P2 ≈ 7,000–9,000 lines. Built file roughly 200–450 KB unminified (Phase 2: 268 KB; Phase 3: 434 KB).
 
 **Numerical methods (Phase 2):**
 - Roots: sample the range (400 points on the graph, 2,000 in Solve), refine each sign change with Brent's method and polish with Newton steps on the symbolic derivative. A sign change where |f| doesn't fall towards zero is a pole or a jump, not a root. Touching roots (x² at 0) are found as minima of |f| that reach zero. Close pairs the scan stepped over are split at the dip.
@@ -202,6 +205,12 @@ build/
 - Integrals: adaptive Gauss–Kronrod 7/15 with |K15 − G7| error estimates; undefined values are located and reported, divergence is reported rather than returned as a number.
 - Polynomials: closed forms for degree ≤ 2 (cancellation-free quadratic), Aberth–Ehrlich otherwise, Newton polishing; repeated roots are grouped by an ε^(1/m) test and refined as simple roots of the (m−1)th derivative.
 - Linear systems: Gaussian elimination with partial pivoting to reduced row echelon form; rank, consistency and free unknowns reported; near-singular systems flagged.
+
+**Numerical methods (Phase 3):**
+- CSV: RFC 4180 quoting; the delimiter is chosen by a consistent field count and the share of cells that read as numbers; the decimal separator by votes from cells that can only be read one way (3,14 or 3.14), with ambiguous cells (1,234) leaning to a comma in semicolon files.
+- Linear models (detected symbolically: no ∂f/∂pⱼ mentions a parameter): Householder QR with column scaling and pivoting; lines and polynomials are fitted in centred, scaled x and converted back. Validated on NIST Norris, Longley and Wampler 1–4.
+- Non-linear models: Levenberg–Marquardt with the symbolic Jacobian, steps from QR of [J; √λD], Marquardt scaling, Nielsen's λ rule; automatic guesses (log-linear fits, logit, periodogram, peak width) and several deterministic starts. Validated on 19 NIST problems from both NIST starting points, including the "higher difficulty" MGH09, MGH10, Thurber, Rat43, Eckerle4, BoxBOD and Bennett5.
+- Statistics: s² = RSS/(n − p) and Cov = s²(JᵀJ)⁻¹ (unweighted) or (JᵀWJ)⁻¹ (weighted, D30); Student t quantiles from the incomplete beta function; bands by the delta method, g(x)ᵀ·Cov·g(x).
 
 ## 6. Hard parts and risks
 - **Plot quality at asymptotes:** adaptive subdivision and jump detection.
@@ -218,7 +227,7 @@ build/
 | 0 – Skeleton ✅ | Repo, build, tests, CI/Pages, responsive shell, theme, static grid | Deployed empty shell, checked on a phone |
 | 1 – Core graphing ✅ | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
 | 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
-| 3 – Data & Fit | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
+| 3 – Data & Fit ✅ | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
 | 4 – Polish & extras | Undo, sharing, PNG export, animated θ sweep, then optional P3 items | Release |
 
 ## 8. Expression syntax (as implemented)

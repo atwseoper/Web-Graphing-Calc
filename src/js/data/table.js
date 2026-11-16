@@ -90,10 +90,10 @@ export function dataBounds(sets) {
 }
 
 // CSV text for a data set. Decimal commas use ';' between fields (as European
-// spreadsheets expect); otherwise ','.
-export function toCsv(set, { decimal = set.decimal || 'point' } = {}) {
-  const sep = decimal === 'comma' ? ';' : ',';
-  const quote = (t) => (/[",;\n\r]/.test(t) || /^\s|\s$/.test(t) ? `"${t.replaceAll('"', '""')}"` : t);
+// spreadsheets expect); otherwise ','. sep: '\t' gives cells to paste into a spreadsheet.
+export function toCsv(set, { decimal = set.decimal || 'point', sep = decimal === 'comma' ? ';' : ',' } = {}) {
+  const special = sep === '\t' ? /["\t\n\r]/ : /[",;\n\r]/;
+  const quote = (t) => (special.test(t) || /^\s|\s$/.test(t) ? `"${t.replaceAll('"', '""')}"` : t);
   const anyOff = set.points.some((p) => p.off);
   const head = [set.xName || 'x', set.yName || 'y'];
   if (set.hasSigma) head.push(`σ${set.yName || 'y'}`);

@@ -189,3 +189,9 @@ test('decodeBytes: UTF-8, UTF-16 with BOM, Windows-1252', async () => {
   const cp1252 = new Uint8Array([0x47, 0x72, 0xf6, 0xdf, 0x65, 0x3b, 0x80]); // "Größe;€"
   assert.equal(decodeBytes(cp1252), 'Größe;€');
 });
+
+test('toCsv: tab-separated cells for spreadsheets', () => {
+  const set = newDataSet(1, '#000000', 'T', [{ x: 1.5, y: 2, s: null, off: false }], { decimal: 'comma', xName: 'Zeit, s' });
+  assert.equal(toCsv(set, { sep: '\t' }), 'Zeit, s\ty\r\n1,5\t2\r\n');
+  assert.equal(toCsv(set), '"Zeit, s";y\r\n1,5;2\r\n');
+});

@@ -12,7 +12,7 @@ import {
   sampleCurve, sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
 } from '../plot/sample.js';
 import {
-  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars,
+  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars, fillBand,
 } from '../plot/render.js';
 import { dataBounds } from '../data/table.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
@@ -193,9 +193,11 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
 
   // ---- data sets and fits -----------------------------------------------------------------
 
-  // Fitted curves, traceable like y = f(x) graphs.
+  // Fitted curves, traceable like y = f(x) graphs, with 95% confidence bands (shaded)
+  // and prediction bands (dashed) when asked for.
   function drawFits() {
     for (const { fit, result } of getFits()) {
+      if (fit.bands !== 'none' && result.meanVar && Number.isFinite(result.q)) drawBands(fit, result);
       const lines = sampleCartesian(result.f, vp);
       drawLines(ctx, lines, fit.color, 2.5);
       curves.push({ rowId: `fit:${fit.id}`, kind: 'cartesian', color: fit.color, lines, result: { kind: 'cartesian', f: result.f } });
@@ -233,6 +235,48 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       drawScatter(ctx, off.x, off.y, set.color, { radius, hollow: true, alpha: 0.7 });
       drawScatter(ctx, on.x, on.y, set.color, { radius });
       curves.push({ rowId: `set:${set.id}`, kind: 'scatter', color: set.color, lines: [], points: all, result: { kind: 'scatter', set } });
+    }
+  }
+
+  function drawBands(fit, r) {
+    const { xMin, xMax } = worldBounds(vp);
+    const N = Math.max(60, Math.round(vp.width / 3));
+    const xs = new Array(N + 1);
+    const cLo = new Array(N + 1);
+    const cHi = new Array(N + 1);
+    const pLo = new Array(N + 1);
+    const pHi = new Array(N + 1);
+    const pred = fit.bands === 'both' && !r.weighted && Number.isFinite(r.s);
+    for (let k = 0; k <= N; k++) {
+      const x = xMin + ((xMax - xMin) * k) / N;
+      const y = r.f(x);
+      const v = r.meanVar(x);
+      xs[k] = toScreen(vp, x, 0)[0];
+      const okv = Number.isFinite(y) && Number.isFinite(v) && v >= 0;
+      const half = okv ? r.q * Math.sqrt(v) : NaN;
+      cLo[k] = okv ? toScreen(vp, x, y - half)[1] : NaN;
+      cHi[k] = okv ? toScreen(vp, x, y + half)[1] : NaN;
+      if (pred) {
+        const ph = okv ? r.q * Math.sqrt(v + r.s * r.s) : NaN;
+        pLo[k] = okv ? toScreen(vp, x, y - ph)[1] : NaN;
+        pHi[k] = okv ? toScreen(vp, x, y + ph)[1] : NaN;
+      }
+    }
+    fillBand(ctx, xs, cLo, cHi, fit.color, 0.16);
+    if (pred) {
+      const runs = (ys) => {
+        const out = [];
+        let cur = null;
+        ys.forEach((y, k) => {
+          if (Number.isFinite(y)) {
+            if (!cur) out.push(cur = { x: [], y: [] });
+            cur.x.push(xs[k]);
+            cur.y.push(y);
+          } else cur = null;
+        });
+        return out;
+      };
+      drawLines(ctx, [...runs(pLo), ...runs(pHi)], fit.color, 1.5, { dash: [6, 5], alpha: 0.7 });
     }
   }
 

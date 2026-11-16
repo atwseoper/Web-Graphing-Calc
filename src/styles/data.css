@@ -378,3 +378,14 @@
 .fit-corr th, .fit-corr td { padding: 2px 8px 2px 0; text-align: right; }
 .fit-corr th { color: var(--text-muted); font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
 .fit-corr .is-high { color: var(--error); font-weight: 600; }
+.fit-bands { width: auto; height: 34px; min-width: 0; font-size: 0.85rem; border-radius: 17px; padding: 0 10px; }
+.resid-box { margin: 0 -2px; }
+.resid-plot { display: block; width: 100%; height: 120px; border-radius: 8px; background: var(--surface-2); }
+.fit-starts { display: grid; gap: 6px; padding-left: 4px; }
+.fit-starts .an-note { margin: 0; }
+.start-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px 12px; }
+.start-row { display: flex; align-items: center; gap: 8px; }
+.start-row i { min-width: 22px; font-family: Georgia, "Times New Roman", serif; font-size: 1rem; }
+.start-row .mini-input { width: 84px; }
+.export-row { gap: 2px; }
+.export-row .an-label { margin-right: 4px; }

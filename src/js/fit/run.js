@@ -11,7 +11,7 @@
 // meanVar(x) = g(x)ᵀ·Cov·g(x), g = ∂f/∂p: the variance of the fitted value (delta method;
 // exact for linear models), for confidence and prediction bands.
 import { buildModel, equationText } from './models.js';
-import { fitNonlinear } from './nonlinear.js';
+import { fitNonlinear, primaryStart } from './nonlinear.js';
 import { leastSquares } from '../numerics/qr.js';
 import { tQuantile, normalQuantile, chi2Sf } from '../numerics/stats.js';
 import { fitPoints } from '../data/table.js';
@@ -37,8 +37,9 @@ export function runFit(analysis, set, fit, options = {}) {
   }
 
   // Leave out points where the model (or its derivatives) can't be evaluated, e.g. ln x
-  // at x ≤ 0. Linear models: test with all parameters 0 and 1.
+  // at x ≤ 0. Linear models: test with all parameters 0. Others: at the starting values.
   const frame = new Float64Array(p + 1);
+  const primary = model.linear ? null : primaryStart(model, fit, pts.x, pts.y, analysis.angle);
   const x = [];
   const y = [];
   const sig = [];
@@ -51,6 +52,10 @@ export function runFit(analysis, set, fit, options = {}) {
       for (let k = 1; k <= p; k++) frame[k] = 0;
       ok = Number.isFinite(model.f(frame));
       for (let k = 0; ok && k < p; k++) ok = Number.isFinite(model.grads[k](frame));
+    } else {
+      for (let k = 1; k <= p; k++) frame[k] = primary[k - 1];
+      ok = Number.isFinite(model.f(frame));
+      for (let k = 0; ok && model.grads && k < p; k++) ok = Number.isFinite(model.grads[k](frame));
     }
     if (!ok) {
       undefinedAt++;
@@ -61,7 +66,7 @@ export function runFit(analysis, set, fit, options = {}) {
     sig.push(weighted ? pts.s[i] : 1);
     index.push(pts.index[i]);
   }
-  if (undefinedAt) notes.push(`${plural(undefinedAt, 'point')} left out: the model isn't defined there.`);
+  if (undefinedAt) notes.push(`${plural(undefinedAt, 'point')} left out: the model (or how it changes with its parameters) isn't defined there.`);
   const n = x.length;
   if (n === 0) return fail('No points to fit yet: each point needs an x and a y value');
   if (n < p) return fail(`This model has ${plural(p, 'parameter')}, so it needs at least ${p} points (there ${n === 1 ? 'is' : 'are'} ${n})`);
@@ -97,6 +102,20 @@ export function runFit(analysis, set, fit, options = {}) {
   const ci = values.map((v, k) => [v - q * se[k], v + q * se[k]]);
   const corr = cov.map((row, i) => row.map((v, j) => v / Math.sqrt(cov[i][i] * cov[j][j])));
   if (dof === 0) notes.push(`As many parameters as points: the curve passes through every point, so there are no error estimates.`);
+
+  // Honest numerics: say when parameters are barely determined, or χ² disagrees with σy.
+  if (dof > 0) {
+    const loose = model.params.filter((_, k) => Number.isFinite(se[k]) && se[k] > Math.abs(values[k]));
+    if (loose.length) {
+      const names = loose.map((n) => n.replace(/_(\d+)/, (_, d) => d.split('').map((c) => '₀₁₂₃₄₅₆₇₈₉'[c]).join('')));
+      notes.push(`${names.join(', ')} ${loose.length === 1 ? 'is' : 'are'} poorly determined: the standard error is larger than the value. The data may not pin ${loose.length === 1 ? 'it' : 'them'} down, or the model may have more parameters than it needs.`);
+    }
+  }
+  if (weighted && dof > 0) {
+    const p2 = chi2Sf(rss, dof);
+    if (p2 < 0.01) notes.push(`χ²/dof = ${(rss / dof).toPrecision(3)} is large: the points scatter more than their σy values allow. Either σy is underestimated or the model doesn't describe the data, and the standard errors may be too small.`);
+    else if (p2 > 0.99) notes.push(`χ²/dof = ${(rss / dof).toPrecision(3)} is small: the points scatter less than their σy values suggest, so σy may be overestimated.`);
+  }
 
   const residuals = { x, r: y.map((v, i) => v - yhat[i]), s: weighted ? sig : null, index };
   const r2 = sst > 0 ? 1 - rss / sst : NaN;
