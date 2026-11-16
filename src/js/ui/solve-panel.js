@@ -274,7 +274,20 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
       }
       return;
     }
-    if (r.status === 'unique') {
+    if (r.status === 'nonlinear') {
+      results.append(...r.solutions.map((q) => h('div', { class: 'result-card' },
+        h('div', { class: 'result-main' }, r.unknowns.map((n, i) => `${n} = ${fmt(q.values[i])}`).join(',  ')),
+        h('div', { class: 'result-detail' }, `residual ${small(q.residual)} · ${q.iterations} iteration${q.iterations === 1 ? '' : 's'}`))));
+      const [lo, hi] = r.box;
+      const where = r.unknowns.length === 1 ? `${fmt(lo)} ≤ ${r.unknowns[0]} ≤ ${fmt(hi)}` : `${fmt(lo)} … ${fmt(hi)} for each unknown`;
+      let text = r.solutions.length
+        ? `${r.solutions.length} solution${r.solutions.length === 1 ? '' : 's'} found, searching from ${r.starts} starting points in ${where}.`
+        : `No solutions found, searching from starting points in ${where}. There may be none.`;
+      if (r.widened && r.solutions.length) text += ' None were found from −10 … 10, so the search was widened.';
+      text += ' These equations aren’t linear, so this is a numerical search (damped Newton): it can miss solutions, especially ones far away or very close together.';
+      if (!r.complete) text += ' The search stopped early to keep the page responsive.';
+      setText(note, text + renamedNote(r));
+    } else if (r.status === 'unique') {
       results.append(...r.unknowns.map((n, i) => h('div', { class: 'result-card' }, h('div', { class: 'result-main' }, `${n} = ${fmt(r.values[i])}`))));
       let text = `${r.equations} equation${r.equations === 1 ? '' : 's'}, ${r.unknowns.length} unknown${r.unknowns.length === 1 ? '' : 's'}. Largest residual ${small(r.residual)}.`;
       if (r.nearlySingular) text += ' Warning: the equations are nearly dependent, so small changes in them change the answer a lot.';
@@ -330,11 +343,11 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
 const DESCRIPTIONS = {
   equation: 'Any equation in one unknown, solved numerically by searching a range. Finds real solutions; works with sin, eˣ, ln, √ and anything else.',
   polynomial: 'Polynomials only, but finds every root with nothing missed, including complex and repeated roots. No search range needed.',
-  system: 'Several linear equations solved together. Says when there is no solution or infinitely many.',
+  system: 'Several equations solved together. Linear ones are solved exactly (and say when there is no solution or infinitely many); non-linear ones are searched numerically for every solution it can find.',
 };
 
 const EXAMPLES = {
   equation: 'Try cos x = x, e^x = 5000, or a formula such as v = u + a t (choose the letter to solve for and give the others values). Variables and functions from the Graph tab can be used.',
   polynomial: 'Try x^3 - 6x^2 + 11x - 6, (x - 1)^2 (x + 3) or 2x^3 = x + 1.',
-  system: 'Try 2x + 3y = 5 and x - y = 1. Use any letters, with up to 12 unknowns.',
+  system: 'Try 2x + 3y = 5 and x - y = 1, or x^2 + y^2 = 4 and y = x^2 - 1. Use any letters: up to 12 unknowns for linear systems, 6 for non-linear ones.',
 };

@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v0.7 – Phase 4 (polish and extras) in progress · **Updated:** 16 November 2026
+**Status:** v1.0 – Phase 4 (polish and extras) complete · **Updated:** 16 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -51,6 +51,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D41 | Implicit curves: any equation in x and y that isn't solved for one of them (`x^2 + y^2 = 9`, `y = x + sin(y)`, `sin(x) = cos(y)`) plots F(x, y) = left − right = 0 by marching squares on a 4 px grid (8 px while panning), with bisection on each crossing, the cell centre for saddles, and poles rejected when |F| at a segment's midpoint exceeds every corner. Implicit curves can be traced (snapped to the curve by Newton steps) but have no points of interest. | 16 Nov 2026 |
 | D42 | Inequalities are whole Graph rows: `y < x^2`, `x >= sin(y)`, `x^2 + y^2 <= 4`, chains like `0 < y < x`. A lone y or x against an expression in the other variable is shaded exactly to the edge of the graph; anything else is tested on the grid, with each comparison's edge drawn only where the other comparisons hold. < and > edges are dashed, ≤ and ≥ solid. Comparisons are still only allowed in braces anywhere else, and inequalities can't be used in Calc or Solve. | 16 Nov 2026 |
 | D43 | Slope fields: `y' = f(x, y)` or `dy/dx = f(x, y)` draws short marks on a 30 px grid fixed to the plane. “+ Solution curve” then a tap on the graph adds a starting point (up to 12 per row, kept in the row and removable as chips); each solution is integrated by RK4 both ways across the visible x range, stopping when it leaves the view by more than its height. | 16 Nov 2026 |
+| D44 | Non-linear systems in the Solve tab's System mode: when any equation isn't linear, the system must have as many equations as unknowns (at most 6). It is solved by damped Newton (Levenberg–Marquardt, with exact symbolic Jacobians where possible) from about 240 starting points spread over −10…10 for each unknown (a grid for up to 3 unknowns, a Halton sequence beyond), widening to ±1000 if nothing is found, within a time budget. Every different solution is listed with its residual, and the note says the search can miss solutions. With two unknowns, “Show on graph” adds each equation (as an implicit curve where needed) and the solution points. Linear systems are still solved exactly. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -128,7 +129,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | Polynomial – all roots including complex | P2 | Moderate | Aberth / Durand–Kerner |
 | Linear systems n×n | P2 | Easy | Gaussian elimination with partial pivoting; flags singular systems |
 | Show residual and iteration count | P2 | Easy | |
-| Non-linear systems | P3 | Hard | Damped Newton |
+| Non-linear systems | P3 | Hard | Done (D44): damped Newton from many starts |
 
 ### 3.6 Data and regression
 | Feature | Pri | Difficulty | Notes |
@@ -239,7 +240,7 @@ build/
 | 1 – Core graphing ✅ | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
 | 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
 | 3 – Data & Fit ✅ | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
-| 4 – Polish & extras | Undo, sharing, PNG export, animated θ sweep, then optional P3 items | Release |
+| 4 – Polish & extras ✅ | Undo, sharing, project files, PNG export, home-screen install, θ sweep, slider play, pretty-printing, inequalities, implicit curves, slope fields, non-linear systems | Release |
 
 ## 8. Expression syntax (as implemented)
 
