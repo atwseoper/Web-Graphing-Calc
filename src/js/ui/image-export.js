@@ -2,6 +2,17 @@
 import { isPlottable } from './graph-view.js';
 import { displayEquation } from './fit-panel.js';
 import { PRESETS } from '../fit/models.js';
+import { parse } from '../expr/parser.js';
+import { prettyLayout, plainText } from '../expr/pretty.js';
+
+// x^2 -> x², sqrt(x) -> √x … (the typed text if it doesn't parse).
+function nice(text) {
+  try {
+    return plainText(prettyLayout(parse(text)));
+  } catch {
+    return text;
+  }
+}
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const MAX_ENTRIES = 14;
@@ -14,7 +25,7 @@ export function legendEntries(state, analysis, fits) {
   state.rows.forEach((row, i) => {
     const r = analysis.rows[i];
     if (row.hidden || !isPlottable(r) || !row.text.trim()) return;
-    out.push({ color: row.color, text: row.text.trim(), kind: r.kind === 'point' ? 'dot' : 'line' });
+    out.push({ color: row.color, text: nice(row.text.trim()), kind: r.kind === 'point' ? 'dot' : 'line' });
   });
   for (const set of state.data.sets) {
     if (set.hidden) continue;
@@ -23,7 +34,7 @@ export function legendEntries(state, analysis, fits) {
       if (s.id !== set.id) continue;
       let eq = '';
       try {
-        eq = displayEquation(result) || '';
+        eq = nice(displayEquation(result) || '');
       } catch { /* label without the equation */ }
       const name = fit.model === 'poly' ? `Polynomial (degree ${fit.degree})` : PRESETS[fit.model].name;
       out.push({ color: fit.color, text: `${name} fit${eq ? `: ${eq}` : ''}`, kind: 'line' });

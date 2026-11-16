@@ -87,6 +87,11 @@ function showOnGraph(result) {
 }
 
 graph.onViewChange(debounce(() => exprList.refresh(), 250));
+// Short graph area (sheet pulled up): zoom buttons in a row so they clear the top ones.
+new ResizeObserver(([entry]) => {
+  $('graph').classList.toggle('is-short', entry.contentRect.height < 330);
+}).observe($('graph'));
+graph.onSweepChange(() => exprList.refresh());
 
 createHelp({ backdrop: $('help'), openBtn: $('btn-help'), getTab: () => store.get().ui.tab });
 

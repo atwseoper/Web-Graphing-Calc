@@ -67,6 +67,7 @@ export function deserialize(json) {
       row.tableStep = str(r.tableStep);
       row.sliderMin = str(r.sliderMin);
       row.sliderMax = str(r.sliderMax);
+      row.sliderStep = str(r.sliderStep);
       row.showAnalysis = bool(r.showAnalysis);
       row.showDeriv = bool(r.showDeriv);
       row.atX = str(r.atX);
@@ -100,6 +101,7 @@ export function deserialize(json) {
       angle: oneOf(s.angle, ['rad', 'deg'], 'rad'),
       grid: oneOf(s.grid, ['cartesian', 'polar'], 'cartesian'),
       keypad: oneOf(s.keypad, ['auto', 'always', 'never'], 'auto'),
+      pretty: oneOf(s.pretty, ['on', 'off'], 'on'),
     },
     calc: { history },
     solve: deserializeSolve(raw.solve),

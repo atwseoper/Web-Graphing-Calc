@@ -25,10 +25,12 @@
 .tool-btn:active { transform: scale(0.96); }
 .tool-btn[aria-expanded="true"] { color: var(--accent); }
 
-/* On short graph areas, lay the zoom tools out in a row. */
+/* On short graph areas, lay the zoom tools out in a row (the class is set from main.js
+   as the graph is resized, e.g. when the sheet is dragged up). */
 @media (max-height: 560px) and (orientation: portrait), (max-height: 380px) {
   .graph-tools--side { flex-direction: row; }
 }
+#graph.is-short .graph-tools--side { flex-direction: row; }
 
 .popover {
   position: absolute;

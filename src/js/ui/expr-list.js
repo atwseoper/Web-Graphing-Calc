@@ -7,6 +7,9 @@ import { defaultDomain } from '../expr/model.js';
 import { niceStep } from '../plot/viewport.js';
 import { integrate } from '../numerics/integrate.js';
 import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
+import { parse } from '../expr/parser.js';
+import { prettyLayout, isRich } from '../expr/pretty.js';
+import { renderMath } from './math-view.js';
 
 const ERROR_DELAY = 900; // ms after the last keystroke before showing an error in the row being edited
 const TABLE_ROWS = 10;
@@ -14,6 +17,7 @@ const MAX_POI_CHIPS = 12;
 const POI_SHORT = { root: 'Root', max: 'Max', min: 'Min', 'y-intercept': 'y-int', intersection: '∩' };
 const MINUS = '−';
 const fmt = (v, sig = 8) => formatNumber(v, sig);
+const SLIDER_SWEEP_MS = 4000; // a playing slider crosses its whole range in this time
 
 const INPUT_ATTRS = {
   autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next',
@@ -127,6 +131,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     });
     const num = h('span', { class: 'row-num', 'aria-hidden': 'true' });
     const status = h('div', { class: 'expr-status', 'aria-live': 'polite' });
+    const pretty = h('div', { class: 'expr-pretty math', 'aria-hidden': 'true', hidden: true });
     input.addEventListener('focus', () => {
       const i = store.get().rows.findIndex((k) => k.id === id);
       if (latest && isFunctionOfX(latest.analysis.rows[i]) && graph) graph.select(id);
@@ -153,7 +158,16 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       const v = Number(Number(range.value).toFixed(decimals));
       updateRow(id, { text: `${e2.sliderName} = ${v}` });
     });
-    const slider = h('div', { class: 'expr-slider', hidden: true }, sMin, range, sMax);
+    range.addEventListener('pointerdown', () => stopPlaying(id));
+    const playBtn = h('button', {
+      class: 'row-btn play-btn', type: 'button', html: ICONS.play, 'aria-label': 'Play: move the slider back and forth', 'aria-pressed': 'false',
+      onClick: () => togglePlaying(id),
+    });
+    const sStep = h('input', { class: 'mini-input slider-step', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Slider step' });
+    sStep.addEventListener('input', () => updateRow(id, { sliderStep: sStep.value }));
+    const stepRow = h('label', { class: 'slider-step-row' }, h('span', { class: 'an-label' }, 'Step'), sStep);
+    const slider = h('div', { class: 'expr-slider', hidden: true },
+      h('div', { class: 'slider-main' }, playBtn, sMin, range, sMax), stepRow);
 
     // Analysis panel.
     const derivText = h('span', { class: 'an-deriv' });
@@ -199,8 +213,12 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     domMaxInput.addEventListener('input', () => updateRow(id, { domainMax: domMaxInput.value }));
     const domVar1 = h('span', { class: 'dom-var' });
     const domError = h('div', { class: 'expr-status is-error', hidden: true });
+    const sweepBtn = h('button', {
+      class: 'row-btn play-btn', type: 'button', html: ICONS.play, 'aria-pressed': 'false',
+      onClick: () => graph && graph.toggleSweep(id),
+    });
     const domain = h('div', { class: 'expr-domain', hidden: true },
-      h('div', { class: 'domain-row' }, domMinInput, h('span', { class: 'le' }, '≤'), domVar1, h('span', { class: 'le' }, '≤'), domMaxInput),
+      h('div', { class: 'domain-row' }, domMinInput, h('span', { class: 'le' }, '≤'), domVar1, h('span', { class: 'le' }, '≤'), domMaxInput, sweepBtn),
       domError,
     );
 
@@ -235,14 +253,15 @@ export function createExprList({ listEl, addBtn, store, graph }) {
 
     const li = h('li', { class: 'expr-row', dataset: { id: String(id) } },
       h('div', { class: 'row-left' }, swatch, num),
-      h('div', { class: 'expr-main' }, input, status, missing, slider, domain, table),
+      h('div', { class: 'expr-main' }, input, pretty, status, missing, slider, domain, table),
       h('div', { class: 'row-actions' }, analysisBtn, tableBtn, delBtn),
       analysisPanel,
     );
     return {
       li, input, swatch, num, status, domain, domMinInput, domMaxInput, domVar1, domError,
       table, tStart, tStep, tHeadA, tHeadB, tBody, tableErr, tableBtn,
-      missing, missingKey: '', slider, range, sMin, sMax, sliderName: null,
+      missing, missingKey: '', slider, range, sMin, sMax, sStep, playBtn, sliderName: null, pretty, prettyKey: null,
+      sweepBtn,
       analysisBtn, analysisPanel, derivRow, derivText, derivBtn, atRow, atInput, atOut,
       intRow, intLabel, intVar, intFrom, intTo, intOut, poiBlock, poiHead, poiList, poiKey: '',
     };
@@ -260,6 +279,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     for (const [id, e] of els) {
       if (!ids.has(id)) {
         e.li.remove();
+        stopPlaying(id);
         els.delete(id);
         lastEdit.delete(id);
       }
@@ -305,6 +325,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       text = `= ${formatNumber(r.value)}`;
       cls = 'is-value';
     }
+    renderPretty(e, row, r, cls === 'is-error' || r.kind === 'error');
     setText(e.status, text);
     e.status.className = `expr-status ${cls}`;
     setHidden(e.status, !text);
@@ -333,6 +354,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       syncInput(e.domMinInput, row.domainMin);
       syncInput(e.domMaxInput, row.domainMax);
       setText(e.domVar1, r.kind === 'polar' ? 'θ' : 't');
+      renderSweepBtn(e, row.id, r.kind);
       const de = r.domainError;
       setHidden(e.domError, !de);
       if (de) setText(e.domError, de.message);
@@ -355,11 +377,108 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     if (showAnalysis) renderAnalysis(e, row, r, analysis);
   }
 
+  // Maths preview under the row (D38): only when it shows something the typed text
+  // doesn't (a fraction, power, root, Σ, subscript or |…|).
+  function renderPretty(e, row, r, hasError) {
+    const on = latest && latest.state.settings.pretty !== 'off';
+    const src = row.text.trim();
+    let key = null;
+    if (on && src && !hasError && r.kind !== 'empty') key = src;
+    if (key !== e.prettyKey) {
+      e.prettyKey = key;
+      let box = null;
+      if (key) {
+        try {
+          box = prettyLayout(parse(src));
+        } catch {
+          box = null;
+        }
+      }
+      if (box && isRich(box)) e.pretty.replaceChildren(renderMath(box));
+      else e.pretty.replaceChildren();
+    }
+    setHidden(e.pretty, !e.pretty.firstChild);
+  }
+
+  function renderSweepBtn(e, id, kind) {
+    const on = !!graph && graph.isSweeping(id);
+    const v = kind === 'polar' ? 'θ' : 't';
+    const state = `${on}:${v}`;
+    if (e.sweepBtn.dataset.state === state) return;
+    e.sweepBtn.dataset.state = state;
+    e.sweepBtn.innerHTML = on ? ICONS.pause : ICONS.play;
+    e.sweepBtn.setAttribute('aria-pressed', String(on));
+    e.sweepBtn.setAttribute('aria-label', on ? 'Stop drawing' : `Draw the curve as ${v} increases`);
+  }
+
+  // ---- slider play button (D39) -------------------------------------------------------------
+  const players = new Map(); // row id -> { raf, pos, dir, last }
+
+  function stopPlaying(id) {
+    const p = players.get(id);
+    if (!p) return;
+    cancelAnimationFrame(p.raf);
+    players.delete(id);
+    const e = els.get(id);
+    if (e) renderPlayBtn(e, id);
+  }
+
+  function togglePlaying(id) {
+    if (players.has(id)) {
+      stopPlaying(id);
+      return;
+    }
+    const e = els.get(id);
+    if (!e || !e.sliderName) return;
+    const p = { raf: 0, pos: Number(e.range.value), dir: 1, last: 0 };
+    players.set(id, p);
+    renderPlayBtn(e, id);
+    const frame = (now) => {
+      if (players.get(id) !== p) return;
+      const el = els.get(id);
+      if (!el || !el.sliderName || el.slider.hidden) {
+        stopPlaying(id);
+        return;
+      }
+      const lo = Number(el.range.min);
+      const hi = Number(el.range.max);
+      const step = Number(el.range.step) || (hi - lo) / 200;
+      const dt = p.last ? Math.min(100, now - p.last) : 0;
+      p.last = now;
+      if (!(p.pos >= lo && p.pos <= hi)) p.pos = Math.min(hi, Math.max(lo, p.pos));
+      p.pos += (p.dir * (hi - lo) * dt) / SLIDER_SWEEP_MS;
+      if (p.pos >= hi) { p.pos = hi; p.dir = -1; }
+      if (p.pos <= lo) { p.pos = lo; p.dir = 1; }
+      const snapped = Math.min(hi, Math.max(lo, lo + Math.round((p.pos - lo) / step) * step));
+      const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
+      const v = Number(snapped.toFixed(Math.min(decimals, 12)));
+      const text = `${el.sliderName} = ${v}`;
+      const row = rowById(id);
+      if (row && row.text !== text) updateRow(id, { text });
+      p.raf = requestAnimationFrame(frame);
+    };
+    p.raf = requestAnimationFrame(frame);
+  }
+
+  function renderPlayBtn(e, id) {
+    const on = players.has(id);
+    if (e.playBtn.dataset.state === String(on)) return;
+    e.playBtn.dataset.state = String(on);
+    e.playBtn.innerHTML = on ? ICONS.pause : ICONS.play;
+    e.playBtn.setAttribute('aria-pressed', String(on));
+    e.playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play: move the slider back and forth');
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') for (const id of [...players.keys()]) stopPlaying(id);
+  });
+
   function renderSlider(e, row, r, analysis) {
     const show = r.kind === 'variable' && r.slider && Number.isFinite(r.value);
     setHidden(e.slider, !show);
     if (!show) {
       e.sliderName = null;
+      if (players.has(row.id)) stopPlaying(row.id);
       return;
     }
     e.sliderName = r.name;
@@ -371,7 +490,13 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     if (lo === null) lo = Math.min(defLo, hi === null ? defLo : hi - 1);
     if (hi === null) hi = Math.max(defHi, lo + 1);
     if (!(hi > lo)) hi = lo + 1;
-    const step = niceStep((hi - lo) / 200);
+    const autoStep = niceStep((hi - lo) / 200);
+    const userStep = fieldValue(analysis, row.sliderStep);
+    const step = userStep !== null && userStep > 0 && userStep <= hi - lo ? userStep : autoStep;
+    e.sStep.placeholder = formatNumber(autoStep, 6);
+    syncInput(e.sStep, row.sliderStep);
+    e.sStep.classList.toggle('is-invalid', !!row.sliderStep.trim() && step !== userStep);
+    renderPlayBtn(e, row.id);
     e.sMin.placeholder = formatNumber(Math.min(defLo, hi - 1), 6);
     e.sMax.placeholder = formatNumber(Math.max(defHi, lo + 1), 6);
     syncInput(e.sMin, row.sliderMin);

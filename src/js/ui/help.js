@@ -30,6 +30,14 @@ function graphPage() {
         ex('3 + 4·2', 'a calculation: the answer appears under the row'),
       ),
       p('If a row uses a letter that isn\'t defined yet, buttons appear to add a slider for it.'),
+      p('Under a row with powers, fractions, roots or Σ, the expression is shown as it would be written by hand, so you can check how it was read: 1/2x is ½·x. Settings can hide this.'),
+    ),
+    section('Sliders and animation',
+      ul(
+        ['Drag a slider, or type its ', b('min'), ' and ', b('max'), '. ', b('Step'), ' sets how far each move goes (leave it empty for small steps).'],
+        [b('▷ Play'), ' moves the slider back and forth across its range, so every graph that uses it moves too. Tap again to pause.'],
+        ['On a polar or parametric row, ', b('▷'), ' next to the θ or t range draws the curve as θ or t increases, showing the current point.'],
+      ),
     ),
     section('On the graph',
       ul(

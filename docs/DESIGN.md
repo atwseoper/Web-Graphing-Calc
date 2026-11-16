@@ -45,6 +45,9 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D35 | A share link carries the whole project (rows, view, angle and grid, Solve inputs, data sets and fits) as deflate-compressed JSON in the URL fragment (`#g=…`), so nothing is uploaded. Links over 8,000 characters are refused with a pointer to the project file. Opening a link or a project file replaces the current work as one undoable step and keeps the user's keypad setting and Calc history. | 16 Nov 2026 |
 | D36 | “Save image” renders the current view at 2× (or the screen's pixel ratio, up to 4096 px) with a key underneath listing the visible graphs, data sets and fits (with their rounded equations) in their colours. On phones it opens the share sheet. | 16 Nov 2026 |
 | D37 | Add to Home screen: the web app manifest and icons are generated on the page as data: URLs when it is served over http(s), so the file stays self-contained. There is no service worker, so the installed app needs a connection to start unless the browser has it cached. | 16 Nov 2026 |
+| D38 | Pretty-printed input: under a Graph row, the parsed expression is drawn as maths (stacked fractions, powers, radicals, |x|, log bases, Σ/Π with limits, subscripts) whenever that shows something the typed text doesn't, so the user can check how it was read (`1/2x` = ½·x). Fractions inside exponents stay on one line. A setting hides it. The same layout gives one-line Unicode text (x², √x, a₁) for the key of exported images. | 16 Nov 2026 |
+| D39 | Slider play button and step: ▷ moves a slider back and forth across its range (one crossing takes 4 s), snapping to the step. The step field (empty = automatic, about 1/200 of the range) also applies to dragging. Playing stops when the slider is dragged, the row stops being a slider, or the page is hidden. A whole play counts as one undo step. | 16 Nov 2026 |
+| D40 | θ sweep: ▷ beside a polar (or parametric) row's range draws the curve as θ (or t) runs from the start of the range to the end over 4 s. The rest of the curve shows faintly; the current point is labelled with its θ or t, and for polar curves the radius from the origin is drawn. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -70,11 +73,11 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | Implicit multiplication (`2x`, `3sin(x)`, `(x+1)(x-1)`) | P1 | Moderate | Documented rules plus visible parse feedback |
 | Standard functions and constants; deg/rad toggle | P1 | Easy | |
 | User variables and functions (`a = 3`, `f(x) = x^2+1`) | P1 | Moderate | Dependency graph and cycle detection |
-| Sliders for free parameters | P2 | Easy | Created automatically for undefined names |
+| Sliders for free parameters | P2 | Easy | Created automatically for undefined names; play button and step (D39) |
 | Piecewise / conditional expressions | P2 | Moderate | |
 | Symbolic differentiation on the AST | P2 | Moderate | Exact f′ for plotting, extrema, Newton's method and Levenberg–Marquardt Jacobians |
 | Factorial/gamma, nCr/nPr, Σ, Π | P2 | Easy | |
-| Lightweight pretty-printing of input | P3 | Moderate | Custom renderer; no MathJax |
+| Lightweight pretty-printing of input | P3 | Moderate | Done (D38): custom renderer, no MathJax |
 
 ### 3.2 Cartesian graphing
 | Feature | Pri | Difficulty | Notes |
@@ -101,7 +104,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | Polar grid with degree/π labels | P1 | Easy |
 | Polar trace (r, θ and x, y) | P1 | Easy |
 | Negative-r handling | P2 | Easy |
-| Animated θ sweep (moved to Phase 4, D21) | P3 | Easy |
+| Animated θ sweep – done (D40), parametric curves too | P3 | Easy |
 | Polar area ½∫r² dθ | P2 | Easy |
 
 ### 3.4 Graph analysis
