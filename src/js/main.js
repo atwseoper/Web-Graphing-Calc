@@ -8,6 +8,8 @@ import { createKeypad } from './ui/keypad.js';
 import { createSheet } from './ui/sheet.js';
 import { createCalcPanel } from './ui/calc-panel.js';
 import { createSolvePanel } from './ui/solve-panel.js';
+import { createHelp } from './ui/help.js';
+import { symbolShortcut } from './expr/shortcuts.js';
 import { newRow, nextColor } from './state/defaults.js';
 import { createSettings } from './ui/settings.js';
 import { ICONS } from './ui/icons.js';
@@ -74,6 +76,8 @@ function showOnGraph(result) {
 
 graph.onViewChange(debounce(() => exprList.refresh(), 250));
 
+createHelp({ backdrop: $('help'), openBtn: $('btn-help'), getTab: () => store.get().ui.tab });
+
 const solvePanel = createSolvePanel({ root: $('tab-solve'), store, getAnalysis, onShowOnGraph: showOnGraph });
 
 const calc = createCalcPanel({
@@ -131,6 +135,31 @@ createKeypad({
   },
 });
 
+// On-screen keypad button (mouse and keyboard devices): switches the keypad between
+// "Always" and "Auto" (which means off with a mouse), and applies it straight away.
+const keypadBtn = $('btn-keypad');
+keypadBtn.addEventListener('pointerdown', (e) => e.preventDefault()); // keep focus in the input
+keypadBtn.addEventListener('click', () => {
+  const on = store.get().settings.keypad !== 'always';
+  store.update((s) => ({ ...s, settings: { ...s.settings, keypad: on ? 'always' : 'auto' } }));
+  systemKeyboard = false;
+  syncInputModes();
+  if (activeInput) showKeypad(keypadWanted());
+});
+
+// Typing shortcuts: "theta" -> θ, "pi" -> π, "<=" -> ≤, ">=" -> ≥. Runs before the
+// inputs' own handlers (capture phase), only for typed text (the keypad's own input
+// events have no inputType).
+panel.addEventListener('input', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || !t.hasAttribute('data-keypad')) return;
+  if (!e.inputType || !e.inputType.startsWith('insert')) return;
+  const caret = t.selectionStart;
+  if (caret === null || caret !== t.selectionEnd) return;
+  const hit = symbolShortcut(t.value.slice(0, caret));
+  if (hit) t.setRangeText(hit.replacement, hit.start, caret, 'end');
+}, true);
+
 panel.addEventListener('focusin', (e) => {
   const t = e.target;
   if (!(t instanceof HTMLInputElement) || !t.hasAttribute('data-keypad')) return;
@@ -157,7 +186,7 @@ $('graph').addEventListener('pointerdown', () => {
 });
 
 // ---- tabs ---------------------------------------------------------------------------------
-const tabButtons = [...document.querySelectorAll('[role="tab"]')];
+const tabButtons = [...document.querySelectorAll('.tab-bar [role="tab"]')];
 // Tabs that use the whole screen (no graph). Graph and Data keep the graph visible.
 const FULL_PAGE_TABS = new Set(['calc', 'solve']);
 const appEl = $('app');
@@ -180,6 +209,7 @@ function renderAll(state) {
   calc.render(state);
   solvePanel.render(state);
   settings.render(state);
+  keypadBtn.setAttribute('aria-pressed', String(state.settings.keypad === 'always'));
   renderTabs(state);
   graph.requestDraw();
 }

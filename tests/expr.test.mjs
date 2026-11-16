@@ -292,3 +292,24 @@ test('special functions', () => {
   assert.equal(mod(7, -3), -2);
   assert.equal(nCr(52, 5), 2598960);
 });
+
+test('symbol shortcuts: theta, pi, <= and >= as typed', async () => {
+  const { symbolShortcut } = await import('../src/js/expr/shortcuts.js');
+  const { analyse } = await import('../src/js/expr/model.js');
+  assert.deepEqual(symbolShortcut('r = cos(theta'), { start: 8, replacement: 'θ' });
+  assert.deepEqual(symbolShortcut('2Theta'), { start: 1, replacement: 'θ' });
+  assert.deepEqual(symbolShortcut('y = sin(pi'), { start: 8, replacement: 'π' });
+  assert.deepEqual(symbolShortcut('{x <='), { start: 3, replacement: '≤' });
+  assert.deepEqual(symbolShortcut('{x >='), { start: 3, replacement: '≥' });
+  assert.equal(symbolShortcut('spi'), null); // end of a longer word
+  assert.equal(symbolShortcut('thet'), null);
+  assert.equal(symbolShortcut('x <'), null);
+  // a capital R or Y where the graph letter was meant
+  const caps = analyse([{ text: 'R = cos(θ)' }, { text: 'Y = 2x' }, { text: 'A = 2x' }]).rows;
+  assert.equal(caps[0].error.message, 'For a polar graph, use a lowercase r: r = …');
+  assert.equal(caps[1].error.message, 'For a graph, use a lowercase y: y = …');
+  assert.match(caps[2].error.message, /'A' can't depend on x/);
+  // the replaced symbols mean the same to the parser as the words
+  const words = analyse([{ text: 'cos(pi/3)' }, { text: 'cos(π/3)' }]).rows;
+  assert.equal(words[0].value, words[1].value);
+});

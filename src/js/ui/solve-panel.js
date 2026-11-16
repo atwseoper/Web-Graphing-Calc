@@ -122,13 +122,14 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
   const note = h('p', { class: 'an-note solve-note' });
   const showBtn = h('button', { type: 'button', class: 'primary-btn', onClick: () => cache.result && onShowOnGraph(cache.result) }, 'Show on graph');
   const help = h('p', { class: 'placeholder solve-help' });
+  const desc = h('p', { class: 'solve-desc' });
 
   for (const el of [eqInput, polyInput]) {
     el.addEventListener('keypad-enter', () => el.blur());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   }
 
-  root.append(h('div', { class: 'solve' }, modes, eqSection, polySection, sysSection, errorEl, results, note, showBtn, help));
+  root.append(h('div', { class: 'solve' }, modes, desc, eqSection, polySection, sysSection, errorEl, results, note, showBtn, help));
 
   const syncInput = (input, value) => { if (input.value !== value) input.value = value; };
 
@@ -174,8 +175,9 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
     else renderSystem(result, editing);
 
     setHidden(showBtn, !(result && result.graph && result.graph.length && !result.error));
+    setText(desc, DESCRIPTIONS[solve.mode]);
     setHidden(help, !(result && result.empty));
-    setText(help, HELP[solve.mode]);
+    setText(help, EXAMPLES[solve.mode]);
   }
 
   function showError(result, editing) {
@@ -324,8 +326,15 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
   return { render };
 }
 
-const HELP = {
-  equation: 'Solves one equation for one unknown, numerically. Use any letters: with several, choose which to solve for and give the others values. Variables and functions from the Graph tab can be used.',
-  polynomial: 'Finds every root of a polynomial, including complex and repeated ones. Write it in any form, e.g. (x − 1)^2 (x + 3) or 2x^3 = x + 1.',
-  system: 'Solves linear equations in several unknowns, e.g. 2x + 3y = 5 and x − y = 1. It tells you when there is no solution or infinitely many.',
+// A line under the mode buttons saying what each mode is for (more in the help).
+const DESCRIPTIONS = {
+  equation: 'Any equation in one unknown, solved numerically by searching a range. Finds real solutions; works with sin, eˣ, ln, √ and anything else.',
+  polynomial: 'Polynomials only, but finds every root with nothing missed, including complex and repeated roots. No search range needed.',
+  system: 'Several linear equations solved together. Says when there is no solution or infinitely many.',
+};
+
+const EXAMPLES = {
+  equation: 'Try cos x = x, e^x = 5000, or a formula such as v = u + a t (choose the letter to solve for and give the others values). Variables and functions from the Graph tab can be used.',
+  polynomial: 'Try x^3 - 6x^2 + 11x - 6, (x - 1)^2 (x + 3) or 2x^3 = x + 1.',
+  system: 'Try 2x + 3y = 5 and x - y = 1. Use any letters, with up to 12 unknowns.',
 };
