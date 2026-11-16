@@ -30,7 +30,12 @@ Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
     <main id="graph" aria-label="Graph">
       <canvas id="graph-canvas" role="img" aria-label="Graph of your expressions"></canvas>
 
+      <div class="graph-tools graph-tools--left">
+        <button id="btn-undo" class="tool-btn" type="button" aria-label="Undo" title="Undo (Ctrl+Z)" data-icon="undo" disabled></button>
+        <button id="btn-redo" class="tool-btn" type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" data-icon="redo" disabled></button>
+      </div>
       <div class="graph-tools graph-tools--top">
+        <button id="btn-share" class="tool-btn" type="button" aria-label="Share and save" aria-expanded="false" aria-controls="share-menu" data-icon="share"></button>
         <button id="btn-settings" class="tool-btn" type="button" aria-label="Settings" aria-expanded="false" aria-controls="settings" data-icon="settings"></button>
       </div>
       <div class="graph-tools graph-tools--side">
@@ -41,6 +46,7 @@ Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
       </div>
 
       <div id="settings" class="popover" role="dialog" aria-label="Settings" hidden></div>
+      <div id="share-menu" class="popover popover--share" role="dialog" aria-label="Share and save" hidden></div>
     </main>
 
     <section id="panel" aria-label="Expressions and tools">
@@ -63,7 +69,7 @@ Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
           </div>
           <ol id="calc-history" class="calc-history" aria-label="Calculation history"></ol>
           <div class="calc-entry">
-            <input id="calc-input" class="calc-input" type="text" data-keypad autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Calculation" placeholder="e.g. 2^10 or sqrt(2)">
+            <input id="calc-input" class="calc-input" type="text" data-keypad data-native-undo autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Calculation" placeholder="e.g. 2^10 or sqrt(2)">
             <button id="calc-equals" class="equals-btn" type="button" aria-label="Calculate">=</button>
           </div>
         </div>

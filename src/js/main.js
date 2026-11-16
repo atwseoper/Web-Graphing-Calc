@@ -17,6 +17,11 @@ import { newRow, nextColor } from './state/defaults.js';
 import { createSettings } from './ui/settings.js';
 import { ICONS } from './ui/icons.js';
 import { debounce } from './ui/dom.js';
+import { createHistory, applySnapshot } from './state/history.js';
+import { decodeShare, openProject, shareValueFromHash } from './state/share.js';
+import { createShareMenu } from './ui/share-menu.js';
+import { showToast } from './ui/toast.js';
+import { setUpInstall } from './ui/install.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -103,6 +108,76 @@ const buildMeta = document.querySelector('meta[name="build-info"]');
 const buildInfo = buildMeta && !buildMeta.content.startsWith('__') ? buildMeta.content : 'development build';
 const settings = createSettings({ popover: $('settings'), toggleBtn: $('btn-settings'), store, buildInfo });
 
+// ---- undo / redo --------------------------------------------------------------------------
+const undoHistory = createHistory();
+let restoring = false;
+const undoBtn = $('btn-undo');
+const redoBtn = $('btn-redo');
+
+function restore(snap) {
+  if (!snap) return false;
+  restoring = true;
+  try {
+    store.update((s) => applySnapshot(s, snap));
+  } finally {
+    restoring = false;
+  }
+  return true;
+}
+const undo = () => restore(undoHistory.undo(store.get()));
+const redo = () => restore(undoHistory.redo(store.get()));
+for (const [btn, fn] of [[undoBtn, undo], [redoBtn, redo]]) {
+  btn.addEventListener('pointerdown', (e) => e.preventDefault()); // keep focus (and the keypad) where it is
+  btn.addEventListener('click', fn);
+}
+
+// Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y. Inputs whose text isn't part of the saved
+// work (the Calc line, the paste box) keep the browser's own undo.
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const isUndo = k === 'z' && !e.shiftKey;
+  const isRedo = (k === 'z' && e.shiftKey) || (k === 'y' && e.ctrlKey && !e.shiftKey);
+  if (!isUndo && !isRedo) return;
+  const t = e.target;
+  if (t instanceof HTMLElement && t.closest('[data-native-undo]')) return;
+  e.preventDefault();
+  if (isUndo) undo();
+  else redo();
+}, true);
+
+// ---- share, save and open -------------------------------------------------------------------
+function applyOpened(next, message) {
+  undoHistory.seal();
+  store.update(() => next);
+  undoHistory.seal();
+  graph.useView(next.view);
+  showToast(message, { action: { label: 'Undo', onClick: undo } });
+}
+
+const shareMenu = createShareMenu({
+  popover: $('share-menu'), toggleBtn: $('btn-share'), store, graph, getAnalysis, getFits, onOpen: applyOpened,
+});
+
+async function openFromHash() {
+  const value = shareValueFromHash(location.hash);
+  if (!value) return;
+  // Take the project out of the address bar, so reloading doesn't open it again.
+  try {
+    history.replaceState(null, '', location.pathname + location.search);
+  } catch { /* file: URLs in some browsers */ }
+  try {
+    const r = openProject(store.get(), await decodeShare(value));
+    if (r.error) throw new Error(r.error);
+    applyOpened(r.state, 'Opened a shared graph');
+  } catch (err) {
+    const msg = err && err.message && /version|project/.test(err.message) ? err.message : 'This link is damaged or incomplete, so it couldn’t be opened.';
+    showToast(msg, { ms: 9000 });
+  }
+}
+window.addEventListener('hashchange', openFromHash);
+setUpInstall();
+
 const panel = $('panel');
 createSheet({ panel, handle: $('sheet-handle') });
 
@@ -175,6 +250,7 @@ panel.addEventListener('input', (e) => {
 }, true);
 
 panel.addEventListener('focusin', (e) => {
+  undoHistory.seal(); // a new field starts a new undo step
   const t = e.target;
   if (!(t instanceof HTMLInputElement) || !t.hasAttribute('data-keypad')) return;
   activeInput = t;
@@ -243,6 +319,10 @@ window.addEventListener('drop', (e) => {
   appEl.classList.remove('is-dropping');
   const file = e.dataTransfer.files[0];
   if (!file) return;
+  if (/\.json$/i.test(file.name) || file.type === 'application/json') {
+    shareMenu.openFile(file);
+    return;
+  }
   showDataTab();
   dataPanel.openFile(file);
 });
@@ -263,11 +343,14 @@ function renderAll(state) {
   dataPanel.render(state);
   settings.render(state);
   keypadBtn.setAttribute('aria-pressed', String(state.settings.keypad === 'always'));
+  undoBtn.disabled = !undoHistory.canUndo();
+  redoBtn.disabled = !undoHistory.canRedo();
   renderTabs(state);
   graph.requestDraw();
 }
 
 store.subscribe((state, prev) => {
+  if (!restoring) undoHistory.record(prev, state);
   if (state.rows !== prev.rows || state.settings !== prev.settings) {
     analysis = analyse(state.rows, state.settings);
   }
@@ -281,3 +364,4 @@ store.subscribe((state, prev) => {
 
 renderAll(store.get());
 syncInputModes();
+openFromHash();

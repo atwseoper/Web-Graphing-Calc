@@ -42,7 +42,8 @@ export function fieldValue(analysis, text) {
 }
 
 export function createGraphView({ canvas, store, getAnalysis, getFits = () => [] }) {
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d'); // swapped for an off-screen canvas by renderImage()
+  let renderScale = 0; // pixels per CSS px when rendering an image (0 = the screen's)
   let vp = null;
   let curves = [];
   let trace = null; // { rowId, kind, x?, y?, t? }
@@ -115,7 +116,7 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     const v = (n) => cs.getPropertyValue(n).trim();
     colors = {
       bg: v('--graph-bg'), gridMinor: v('--grid-minor'), gridMajor: v('--grid-major'),
-      axis: v('--axis'), label: v('--label'), chipBg: v('--chip-bg'), chipText: v('--chip-text'),
+      axis: v('--axis'), label: v('--label'), text: v('--text'), chipBg: v('--chip-bg'), chipText: v('--chip-text'),
     };
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -148,7 +149,7 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     if (!colors) readColors();
     const state = store.get();
     const analysis = getAnalysis();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = renderScale || window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, vp.width, vp.height);
@@ -814,8 +815,37 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     requestDraw();
   }
 
+  // Show a saved view (an opened project); null = the home view.
+  function useView(view) {
+    if (!vp) return; // not sized yet: resize() reads the view from the store
+    vp = view ? createViewport({ width: vp.width, height: vp.height, ...view }) : homeViewport(vp.width, vp.height);
+    trace = null;
+    poiSel = null;
+    requestDraw();
+    for (const l of listeners) l();
+  }
+
+  // Draw the current view, exactly as on screen, into a new canvas at `scale` pixels
+  // per CSS pixel (for PNG export). Returns { canvas, width, height, colors } or null.
+  function renderImage(scale = 2) {
+    if (!vp) return null;
+    const off = document.createElement('canvas');
+    off.width = Math.round(vp.width * scale);
+    off.height = Math.round(vp.height * scale);
+    const screen = { ctx, curves, drawnPois };
+    ctx = off.getContext('2d');
+    renderScale = scale;
+    try {
+      draw();
+    } finally {
+      ({ ctx, curves, drawnPois } = screen);
+      renderScale = 0;
+    }
+    return { canvas: off, width: vp.width, height: vp.height, colors };
+  }
+
   return {
-    requestDraw, zoomBy, home, fit, frameX, frameBounds, select, pointsFor, showPoint,
+    requestDraw, renderImage, useView, zoomBy, home, fit, frameX, frameBounds, select, pointsFor, showPoint,
     onViewChange: (fn) => listeners.add(fn),
     isCoarse: () => coarse.matches,
   };
