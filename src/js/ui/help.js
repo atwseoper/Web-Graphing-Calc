@@ -147,10 +147,11 @@ function solvePage() {
       ),
     ),
     section('System',
-      p('Several linear equations solved together, for example ', h('code', {}, '2x + 3y = 5'), ' and ', h('code', {}, 'x - y = 1'), '. It also tells you when there is no solution (the equations contradict each other) or infinitely many.'),
+      p('Several equations solved together. Linear ones, for example ', h('code', {}, '2x + 3y = 5'), ' and ', h('code', {}, 'x - y = 1'), ', are solved exactly, and it tells you when there is no solution (the equations contradict each other) or infinitely many.'),
+      p('Non-linear ones, for example ', h('code', {}, 'x^2 + y^2 = 4'), ' and ', h('code', {}, 'y = x^2 - 1'), ', need as many equations as unknowns. They are solved numerically, starting from many points between −10 and 10 (widening to ±1000 if nothing is found), and every different solution found is listed. Solutions far away or very close together can be missed.'),
     ),
     section('Show on graph',
-      p('Adds the equation to the Graph tab, so you can see the solutions as crossing points. Variables and functions you defined on the Graph tab can be used in all three modes.'),
+      p('Adds the equation (or, for a system in two unknowns, every equation and the solution points) to the Graph tab, so you can see the solutions as crossing points. Variables and functions you defined on the Graph tab can be used in all three modes.'),
     ),
   ];
 }

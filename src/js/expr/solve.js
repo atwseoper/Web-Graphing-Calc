@@ -1,4 +1,5 @@
-// The Solve tab's maths: equations in one unknown, polynomials and linear systems.
+// The Solve tab's maths: equations in one unknown, polynomials and systems (linear, or
+// non-linear with as many equations as unknowns).
 // Pure module – no DOM access. Each function takes the current analysis (from
 // model.js), so variables and functions defined in the Graph tab can be used.
 //
@@ -12,9 +13,11 @@ import { substitute, add, sub, mul, div, num, sym } from './derive.js';
 import { findRoots } from '../numerics/roots.js';
 import { polyRoots } from '../numerics/poly.js';
 import { solveLinearSystem } from '../numerics/linalg.js';
+import { solveNonlinear } from '../numerics/nlsolve.js';
 
 const AUTO_RANGES = [[-10, 10], [-1000, 1000], [-1e6, 1e6]];
 const MAX_UNKNOWNS = 12;
+const MAX_NONLINEAR_UNKNOWNS = 6;
 
 function fail(e) {
   if (e instanceof ExprError) return { error: { message: e.message, start: e.start, end: e.end } };
@@ -246,10 +249,7 @@ export function solveSystem(analysis, texts) {
       const actual = at(p);
       const size = Math.abs(c0) + row.reduce((s, a, j) => s + Math.abs(a * p[j]), 0) + 1;
       if (!Number.isFinite(actual) || !Number.isFinite(c0) || Math.abs(actual - predicted) > 1e-9 * size) {
-        return {
-          error: { message: `Equation ${e.index + 1} isn't linear in ${listNames(unknowns)}. Systems of non-linear equations aren't supported yet.`, start: -1, end: -1 },
-          index: e.index,
-        };
+        return solveNonlinearSystem(analysis, eqs, unknowns);
       }
     }
     A.push(row);
@@ -298,6 +298,66 @@ export function solveSystem(analysis, texts) {
       out.graph.push(`(${formatLiteral(sol.x[0])}, ${formatLiteral(sol.x[1])})`);
       out.frame = frameAround([sol.x[0]], [-10, 10]);
     }
+    if (u !== 'x' || w !== 'y') out.renamed = { [u]: 'x', [w]: 'y' };
+  }
+  return out;
+}
+
+// ---- non-linear systems (D44) -------------------------------------------------------------------
+
+// Returns { error, index? } or { unknowns, status: 'nonlinear', equations, solutions:
+//   [{ values, residual, iterations }], box, widened, graph, frame }.
+function solveNonlinearSystem(analysis, eqs, unknowns) {
+  const n = unknowns.length;
+  if (eqs.length !== n) {
+    const e = `${eqs.length} equation${eqs.length === 1 ? '' : 's'}`;
+    const u = `${n} unknown${n === 1 ? '' : 's'} (${listNames(unknowns)})`;
+    return { error: { message: `These equations aren't all linear, so they need as many equations as unknowns: there are ${e} and ${u}.`, start: -1, end: -1 } };
+  }
+  if (n > MAX_NONLINEAR_UNKNOWNS) {
+    return { error: { message: `Non-linear systems can have at most ${MAX_NONLINEAR_UNKNOWNS} unknowns`, start: -1, end: -1 } };
+  }
+  const fns = [];
+  for (const e of eqs) {
+    try {
+      fns.push(analysis.compileIn(e.g, unknowns, {}));
+    } catch (err) {
+      return { ...fail(err), index: e.index };
+    }
+  }
+  // Exact Jacobian from symbolic derivatives where possible.
+  let J = null;
+  try {
+    const d = eqs.map((e) => unknowns.map((u) => analysis.compileIn(analysis.derivativeAst(e.g, u), unknowns, {})));
+    J = (x) => d.map((row) => row.map((fn) => fn(x)));
+  } catch {
+    J = null; // numeric differences instead
+  }
+  const F = (x) => fns.map((fn) => fn(x));
+
+  let box = [-10, 10];
+  let r = solveNonlinear(F, n, { J, box });
+  let widened = false;
+  if (!r.solutions.length) {
+    box = [-1000, 1000];
+    r = solveNonlinear(F, n, { J, box });
+    widened = true;
+  }
+  const out = {
+    unknowns, status: 'nonlinear', equations: eqs.length, box, widened, starts: r.starts, complete: r.complete,
+    solutions: r.solutions.map((q) => ({ values: q.x, residual: q.residual, iterations: q.iterations })),
+    graph: [],
+  };
+
+  // Show on graph: with two unknowns, each equation is a curve in the plane.
+  if (n === 2) {
+    const [u, w] = unknowns;
+    const rename = { [u]: sym('x'), [w]: sym('y') };
+    for (const e of eqs) {
+      out.graph.push(`${toText(substitute(e.lhs, rename))} = ${toText(substitute(e.rhs, rename))}`);
+    }
+    for (const q of out.solutions) out.graph.push(`(${formatLiteral(q.values[0])}, ${formatLiteral(q.values[1])})`);
+    out.frame = frameAround(out.solutions.map((q) => q.values[0]), [-10, 10]);
     if (u !== 'x' || w !== 'y') out.renamed = { [u]: 'x', [w]: 'y' };
   }
   return out;

@@ -89,9 +89,12 @@ test('solveSystem: unique, none, infinite and non-linear', () => {
   assert.equal(inf.status, 'infinite');
   assert.deepEqual(inf.free, ['y']);
   assert.deepEqual(inf.relations[0], { unknown: 'x', constant: 1, terms: [{ unknown: 'y', coef: -1 }] });
+  // Non-linear: solved numerically (D44). x + y = 3, xy = 1 -> x = (3 ± √5)/2.
   const nl = solveSystem(A, ['x + y = 3', 'x y = 1']);
-  assert.match(nl.error.message, /Equation 2 isn't linear/);
-  assert.equal(nl.index, 1);
+  assert.equal(nl.status, 'nonlinear');
+  assert.equal(nl.solutions.length, 2);
+  assert.ok(close(nl.solutions[0].values[0], (3 - Math.sqrt(5)) / 2));
+  assert.ok(close(nl.solutions[1].values[0], (3 + Math.sqrt(5)) / 2));
   // Graph definitions are constants here
   const kk = solveSystem(A, ['k x = 4']);
   assert.ok(close(kk.values[0], 2));
