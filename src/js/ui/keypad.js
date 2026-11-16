@@ -33,7 +33,7 @@ const PAGES = {
     ['{', '{|}', { aria: 'open brace' }], ['}', '}', { action: 'close', aria: 'close brace' }], [':', ': ', { aria: 'colon, then' }], ['x', 'x', { cls: 'var' }],
     ['<', ' < ', { aria: 'less than' }], ['>', ' > ', { aria: 'greater than' }], ['≤', ' ≤ ', { aria: 'less than or equal' }], ['≥', ' ≥ ', { aria: 'greater than or equal' }],
     ["f′", "'", { aria: 'derivative, prime' }], ['⌊x⌋', 'floor(|)', { aria: 'floor' }], ['⌈x⌉', 'ceil(|)', { aria: 'ceiling' }], ['round', 'round(|)'],
-    ['sign', 'sign(|)'], ['Γ', 'gamma(|)', { aria: 'gamma' }], ['nPr', 'nPr(|)', { aria: 'permutations' }], ['sec', 'sec(|)'],
+    ['sign', 'sign(|)'], ['Γ', 'gamma(|)', { aria: 'gamma' }], ['nPr', 'nPr(|)', { aria: 'permutations' }], ['Ans', 'Ans', { aria: 'last answer' }],
   ],
   abc: [
     ['a', 'a'], ['b', 'b'], ['c', 'c'], ['d', 'd'],

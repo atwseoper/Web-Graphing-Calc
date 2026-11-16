@@ -29,6 +29,9 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D19 | Sliders: any `a = number` row gets a slider (default range −10…10, widened to include the value; min and max editable). Undefined letters in a row are offered as "Add slider" chips. | 16 Nov 2026 |
 | D20 | The Solve tab has three modes: Equation (any one unknown, others given values, numeric search over a range that widens automatically from ±10 to ±10⁶), Polynomial (all roots including complex, with multiplicities) and System (linear, any size up to 12 unknowns, reporting no / infinitely many solutions). | 16 Nov 2026 |
 | D21 | Animated θ sweep for polar graphs moves to Phase 4 (polish), as it isn't needed for parity with a handheld. | 16 Nov 2026 |
+| D22 | Help is a "?" button in the tab bar, opening a dialog on the page for the current screen (Graph, Data, Solve, Calc, plus Typing). Solve also shows a one-line description of each mode under the mode buttons. Moved forward from Phase 4. | 16 Nov 2026 |
+| D23 | Symbols on a computer keyboard: typing theta, pi, <= and >= turns them into θ, π, ≤, ≥ as you type. A keypad button in the tab bar (hidden on touch-first devices) switches the on-screen keypad on or off. | 16 Nov 2026 |
+| D24 | The keypad's {} page swaps sec (still typeable) for an Ans key. A capital R, Y or X where the graph letter was meant gets a specific error ("use a lowercase r"); names stay case-sensitive. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -211,7 +214,7 @@ build/
 | 1 – Core graphing ✅ | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
 | 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
 | 3 – Data & Fit | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
-| 4 – Polish & extras | Undo, sharing, help, PNG export, animated θ sweep, then optional P3 items | Release |
+| 4 – Polish & extras | Undo, sharing, PNG export, animated θ sweep, then optional P3 items | Release |
 
 ## 8. Expression syntax (as implemented)
 

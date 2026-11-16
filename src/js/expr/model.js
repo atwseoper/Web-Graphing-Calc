@@ -200,6 +200,13 @@ export function analyse(rows, settings = {}) {
       const fn = compile(def.body, makeCtx({
         unknown(n, where) {
           if (PLOT_VARS.has(n)) {
+            // "R = cos(θ)", "Y = 2x": a capital where the graph letter was meant
+            const lower = name.toLowerCase();
+            const partner = { r: 'θ', y: 'x', x: 'y' }[lower];
+            if (name !== lower && partner === n) {
+              const kind = { r: 'polar graph', y: 'graph', x: 'graph' }[lower] || 'graph';
+              throw new ExprError(`For a ${kind}, use a lowercase ${lower}: ${lower} = …`, def.node.start, def.node.end);
+            }
             throw new ExprError(`'${name}' can't depend on ${n}. To make a function, write ${name}(${n}) = …`, where.start, where.end);
           }
         },

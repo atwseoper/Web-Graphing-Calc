@@ -14,6 +14,7 @@ export const ICONS = {
   left: svg('<path d="M15 6l-6 6 6 6"/>'),
   right: svg('<path d="M9 6l6 6-6 6"/>'),
   enter: svg('<path d="M20 5v7a3 3 0 0 1-3 3H5"/><path d="M9 11l-4 4 4 4"/>'),
+  help: svg('<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4.2"/><path d="M12 17.6h.01"/>'),
   hideKeypad: svg('<path d="M6 9l6 6 6-6"/>'),
   keyboard: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
   warning: svg('<path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.01"/>'),

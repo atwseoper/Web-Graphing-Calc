@@ -22,6 +22,7 @@ Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
   <link rel="stylesheet" href="styles/keypad.css">
   <link rel="stylesheet" href="styles/calc.css">
   <link rel="stylesheet" href="styles/solve.css">
+  <link rel="stylesheet" href="styles/help.css">
 </head>
 <body>
   <div id="app">
@@ -71,13 +72,20 @@ Required Notice: Copyright (c) 2026 atwseoper (https://github.com/atwseoper)
 
       <div id="keypad" class="keypad" aria-label="Maths keypad" hidden></div>
 
-      <nav class="tab-bar" role="tablist" aria-label="Tools">
-        <button role="tab" id="tab-btn-graph" data-tab="graph" aria-controls="tab-graph" aria-selected="true">Graph</button>
-        <button role="tab" id="tab-btn-data" data-tab="data" aria-controls="tab-data" aria-selected="false">Data</button>
-        <button role="tab" id="tab-btn-solve" data-tab="solve" aria-controls="tab-solve" aria-selected="false">Solve</button>
-        <button role="tab" id="tab-btn-calc" data-tab="calc" aria-controls="tab-calc" aria-selected="false">Calc</button>
+      <nav class="tab-bar" aria-label="Tools">
+        <div class="tabs" role="tablist" aria-label="Screens">
+          <button role="tab" id="tab-btn-graph" data-tab="graph" aria-controls="tab-graph" aria-selected="true">Graph</button>
+          <button role="tab" id="tab-btn-data" data-tab="data" aria-controls="tab-data" aria-selected="false">Data</button>
+          <button role="tab" id="tab-btn-solve" data-tab="solve" aria-controls="tab-solve" aria-selected="false">Solve</button>
+          <button role="tab" id="tab-btn-calc" data-tab="calc" aria-controls="tab-calc" aria-selected="false">Calc</button>
+        </div>
+        <button id="btn-keypad" class="bar-icon" type="button" aria-label="On-screen keypad for symbols" aria-pressed="false" data-icon="keyboard"></button>
+        <button id="btn-help" class="bar-icon" type="button" aria-label="Help for this screen" aria-haspopup="dialog" data-icon="help"></button>
       </nav>
     </section>
+  </div>
+  <div id="help" class="help-backdrop" hidden>
+    <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title"></div>
   </div>
   <script type="module" src="js/main.js"></script>
 </body>
