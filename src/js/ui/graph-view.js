@@ -41,7 +41,7 @@ export function fieldValue(analysis, text) {
   return !r.error && Number.isFinite(r.value) ? r.value : null;
 }
 
-export function createGraphView({ canvas, store, getAnalysis }) {
+export function createGraphView({ canvas, store, getAnalysis, getFits = () => [] }) {
   const ctx = canvas.getContext('2d');
   let vp = null;
   let curves = [];
@@ -178,6 +178,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       }
     }
 
+    drawFits();
     drawData(state);
 
     for (const { row, r } of visible) if (row.showAnalysis && isFunctionOfX(r)) drawOverlays(row, r, analysis);
@@ -190,7 +191,16 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     drawSelectedPoi();
   }
 
-  // ---- data sets ------------------------------------------------------------------------
+  // ---- data sets and fits -----------------------------------------------------------------
+
+  // Fitted curves, traceable like y = f(x) graphs.
+  function drawFits() {
+    for (const { fit, result } of getFits()) {
+      const lines = sampleCartesian(result.f, vp);
+      drawLines(ctx, lines, fit.color, 2.5);
+      curves.push({ rowId: `fit:${fit.id}`, kind: 'cartesian', color: fit.color, lines, result: { kind: 'cartesian', f: result.f } });
+    }
+  }
 
   // Points of the visible data sets (left-out points as rings) with σy error bars. Each
   // set becomes a 'scatter' entry in curves so its points can be tapped and traced.
