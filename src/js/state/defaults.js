@@ -11,7 +11,7 @@ export function newRow(id, color, text = '') {
     id, text, color, hidden: false,
     domainMin: '', domainMax: '',
     showTable: false, tableStart: '', tableStep: '',
-    sliderMin: '', sliderMax: '',
+    sliderMin: '', sliderMax: '', sliderStep: '',
     showAnalysis: false, showDeriv: false, atX: '', intFrom: '', intTo: '',
   };
 }
@@ -68,7 +68,7 @@ export function defaultState() {
     nextId: 3,
     rows: [newRow(1, PALETTE[0], 'y = sin(x)'), newRow(2, PALETTE[1])],
     view: null, // null = home view for the current screen size
-    settings: { angle: 'rad', grid: 'cartesian', keypad: 'auto' },
+    settings: { angle: 'rad', grid: 'cartesian', keypad: 'auto', pretty: 'on' },
     calc: { history: [] },
     solve: defaultSolve(),
     data: defaultData(),

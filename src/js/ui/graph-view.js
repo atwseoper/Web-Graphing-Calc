@@ -174,6 +174,8 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       curves.push({ rowId: row.id, kind: r.kind, color: row.color, lines, result: r });
       if (r.kind === 'point') {
         if (lines.length) drawPoint(ctx, lines[0].x[0], lines[0].y[0], row.color);
+      } else if (sweeps.has(row.id) && (r.kind === 'polar' || r.kind === 'parametric')) {
+        drawSweep(row, r, lines, sweeps.get(row.id).frac, angleFactor);
       } else {
         drawLines(ctx, lines, row.color);
       }
@@ -190,6 +192,65 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     drawPointsOfInterest(visible);
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // ---- θ / t sweep (D40) ------------------------------------------------------------------------
+  // A polar or parametric curve drawn as its parameter runs from the start of its range
+  // to the end: the rest of the curve shows faintly, with a dot (and, for polar curves,
+  // the radius from the origin) at the current point.
+  const SWEEP_MS = 4000;
+  const sweeps = new Map(); // row id -> { start, frac }
+  const sweepListeners = new Set();
+  let sweepRaf = 0;
+
+  function sweepFrame(now) {
+    sweepRaf = 0;
+    for (const [id, sw] of sweeps) {
+      if (!sw.start) sw.start = now;
+      sw.frac = Math.min(1, (now - sw.start) / SWEEP_MS);
+      if (sw.frac >= 1) sweeps.delete(id);
+    }
+    draw();
+    if (sweeps.size) sweepRaf = requestAnimationFrame(sweepFrame);
+    else for (const l of sweepListeners) l();
+  }
+
+  function toggleSweep(rowId) {
+    if (sweeps.has(rowId)) sweeps.delete(rowId);
+    else sweeps.set(rowId, { start: 0, frac: 0 });
+    if (sweeps.size && !sweepRaf) sweepRaf = requestAnimationFrame(sweepFrame);
+    if (!sweeps.size) requestDraw();
+    for (const l of sweepListeners) l();
+  }
+
+  function drawSweep(row, r, lines, frac, angleFactor) {
+    const { min, max } = r.domain;
+    const p = min + frac * (max - min);
+    drawLines(ctx, lines, row.color, 2.5, { alpha: 0.18 });
+    if (frac > 0) {
+      const part = r.kind === 'polar'
+        ? samplePolar(r.f, min, p, vp, angleFactor)
+        : sampleParametric(r.fx, r.fy, min, p, vp);
+      drawLines(ctx, part, row.color);
+    }
+    let wx;
+    let wy;
+    if (r.kind === 'polar') {
+      const rad = r.f(p);
+      wx = rad * Math.cos(p * angleFactor);
+      wy = rad * Math.sin(p * angleFactor);
+    } else {
+      wx = r.fx(p);
+      wy = r.fy(p);
+    }
+    if (!Number.isFinite(wx) || !Number.isFinite(wy)) return;
+    const [sx, sy] = toScreen(vp, wx, wy);
+    if (r.kind === 'polar') {
+      const [ox, oy] = toScreen(vp, 0, 0);
+      drawLines(ctx, [{ x: [ox, sx], y: [oy, sy] }], row.color, 1.5, { dash: [5, 4], alpha: 0.8 });
+    }
+    const name = r.kind === 'polar' ? 'θ' : 't';
+    drawMarker(ctx, sx, sy, row.color, `${name} = ${formatNumber(p, 4)}`, colors, vp.width, vp.height);
   }
 
   // ---- data sets and fits -----------------------------------------------------------------
@@ -845,7 +906,9 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
   }
 
   return {
-    requestDraw, renderImage, useView, zoomBy, home, fit, frameX, frameBounds, select, pointsFor, showPoint,
+    requestDraw, renderImage, useView, toggleSweep, zoomBy,
+    isSweeping: (rowId) => sweeps.has(rowId),
+    onSweepChange: (fn) => sweepListeners.add(fn), home, fit, frameX, frameBounds, select, pointsFor, showPoint,
     onViewChange: (fn) => listeners.add(fn),
     isCoarse: () => coarse.matches,
   };

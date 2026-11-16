@@ -218,11 +218,37 @@
 
 /* Slider for a = number */
 .expr-slider {
+  display: grid;
+  gap: 2px;
+  margin: -4px 4px 8px 0;
+}
+.slider-main {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: -4px 4px 8px;
+  gap: 6px;
 }
+.play-btn { width: 40px; flex: none; color: var(--row-color, var(--accent)); opacity: 1; }
+.play-btn svg { width: 16px; height: 16px; }
+.play-btn[aria-pressed="true"] { color: var(--row-color, var(--accent)); }
+.slider-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.slider-step { width: 64px; height: 30px; font-size: 14px; padding: 0 4px; }
+.slider-step.is-invalid { border-color: var(--error); }
+.domain-row .play-btn { margin-left: auto; }
+
+/* Maths preview under a row */
+.expr-pretty {
+  display: block;
+  margin: -12px 4px 4px;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+}
+.expr-pretty[hidden] { display: none; }
+.expr-pretty .m-row { color: var(--text); }
 .slider-bound { width: 58px; height: 32px; font-size: 14px; padding: 0 4px; }
 .slider {
   flex: 1;

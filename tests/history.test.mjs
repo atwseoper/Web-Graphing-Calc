@@ -95,7 +95,7 @@ test('angle and grid settings undo without touching the keypad setting', () => {
   t.store.update((s) => ({ ...s, settings: { ...s.settings, angle: 'deg' } }));
   t.store.update((s) => ({ ...s, settings: { ...s.settings, keypad: 'never' } }));
   t.undo();
-  assert.deepEqual(t.store.get().settings, { angle: 'rad', grid: 'cartesian', keypad: 'never' });
+  assert.deepEqual(t.store.get().settings, { angle: 'rad', grid: 'cartesian', keypad: 'never', pretty: 'on' });
 });
 
 test('a new change clears redo', () => {

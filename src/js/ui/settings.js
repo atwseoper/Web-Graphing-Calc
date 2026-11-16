@@ -6,6 +6,7 @@ const GROUPS = [
   { key: 'angle', label: 'Angles', options: [['rad', 'Radians'], ['deg', 'Degrees']] },
   { key: 'grid', label: 'Grid', options: [['cartesian', 'Cartesian'], ['polar', 'Polar']] },
   { key: 'keypad', label: 'On-screen keypad', options: [['auto', 'Auto'], ['always', 'Always'], ['never', 'Never']] },
+  { key: 'pretty', label: 'Maths preview under rows', options: [['on', 'Show'], ['off', 'Hide']] },
 ];
 
 export function createSettings({ popover, toggleBtn, store, buildInfo }) {
