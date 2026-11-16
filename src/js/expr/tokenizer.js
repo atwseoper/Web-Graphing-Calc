@@ -1,20 +1,24 @@
 // Turns expression text into tokens.
 //
-// Token types: 'num', 'name', 'op' (one of + - * / ^ ( ) , = !), 'eof'.
+// Token types: 'num', 'name', 'op', 'eof'. Operators: + - * / ^ ( ) , = ! and, for
+// conditions and derivatives, { } : < > <= >= and ' (prime).
 // Naming rules (documented in docs/DESIGN.md):
 //  - Known multi-letter words (function names, pi, theta, ans) are recognised
 //    case-insensitively, longest match first: "sinx" -> sin x, "pix" -> π x.
 //  - Any other letters are single-letter names: "xy" -> x y, "ab" -> a b.
 //  - A letter may take a subscript with underscore: a_1, k_max.
-//  - Unicode maths symbols are accepted: × · ÷ − √ ∛ π θ ² ³.
+//  - Unicode maths symbols are accepted: × · ÷ − √ ∛ π θ ² ³ ≤ ≥ Σ Π ′.
 import { ExprError } from './errors.js';
 import { WORDS } from './builtins.js';
 
-const SINGLE_OPS = new Set(['+', '-', '*', '/', '^', '(', ')', ',', '=', '!']);
+const SINGLE_OPS = new Set(['+', '-', '*', '/', '^', '(', ')', ',', '=', '!', '{', '}', ':', '<', '>', "'"]);
 const UNICODE_OPS = {
   '×': '*', '·': '*', '⋅': '*', '∙': '*', '÷': '/', '−': '-', '–': '-', '—': '-',
+  '≤': '<=', '≥': '>=', '′': "'", '’': "'",
 };
-const UNICODE_NAMES = { 'π': 'π', 'θ': 'θ', '√': 'sqrt', '∛': 'cbrt', 'Θ': 'θ' };
+const UNICODE_NAMES = {
+  'π': 'π', 'θ': 'θ', '√': 'sqrt', '∛': 'cbrt', 'Θ': 'θ', 'Σ': 'sum', '∑': 'sum', 'Π': 'prod', '∏': 'prod',
+};
 const SUPERSCRIPTS = { '²': '2', '³': '3' };
 
 const WORD_LIST = Object.keys(WORDS).sort((a, b) => b.length - a.length);
@@ -62,6 +66,11 @@ export function tokenize(src) {
 
     if (c === '*' && src[i + 1] === '*') {
       push('op', '^', i, i + 2);
+      i += 2;
+      continue;
+    }
+    if ((c === '<' || c === '>') && src[i + 1] === '=') {
+      push('op', `${c}=`, i, i + 2);
       i += 2;
       continue;
     }

@@ -1,6 +1,6 @@
 // Saving and restoring state. serialize/deserialize are pure; load/save take a
 // Storage-like object (localStorage in the browser) so they can be tested.
-import { defaultState, newRow, PALETTE, STATE_VERSION } from './defaults.js';
+import { defaultState, defaultSolve, newRow, PALETTE, STATE_VERSION } from './defaults.js';
 
 export const STORAGE_KEY = 'graphcalc:v1';
 const MAX_HISTORY = 100;
@@ -18,6 +18,7 @@ export function serialize(state) {
     view: state.view,
     settings: state.settings,
     calc: { history: state.calc.history.slice(-MAX_HISTORY) },
+    solve: state.solve,
     ui: state.ui,
   });
 }
@@ -46,6 +47,13 @@ export function deserialize(json) {
       row.showTable = bool(r.showTable);
       row.tableStart = str(r.tableStart);
       row.tableStep = str(r.tableStep);
+      row.sliderMin = str(r.sliderMin);
+      row.sliderMax = str(r.sliderMax);
+      row.showAnalysis = bool(r.showAnalysis);
+      row.showDeriv = bool(r.showDeriv);
+      row.atX = str(r.atX);
+      row.intFrom = str(r.intFrom);
+      row.intTo = str(r.intTo);
       rows.push(row);
     }
   }
@@ -76,7 +84,28 @@ export function deserialize(json) {
       keypad: oneOf(s.keypad, ['auto', 'always', 'never'], 'auto'),
     },
     calc: { history },
+    solve: deserializeSolve(raw.solve),
     ui: { tab: oneOf(raw.ui && raw.ui.tab, ['graph', 'solve', 'data', 'calc'], 'graph') },
+  };
+}
+
+function deserializeSolve(raw) {
+  const d = defaultSolve();
+  if (!raw || typeof raw !== 'object') return d;
+  const given = {};
+  if (raw.given && typeof raw.given === 'object') {
+    for (const [k, v] of Object.entries(raw.given)) if (typeof v === 'string' && k.length <= 8) given[k] = v;
+  }
+  const system = Array.isArray(raw.system) ? raw.system.filter((t) => typeof t === 'string').slice(0, 12) : d.system;
+  return {
+    mode: oneOf(raw.mode, ['equation', 'polynomial', 'system'], 'equation'),
+    equation: str(raw.equation),
+    solveFor: str(raw.solveFor),
+    given,
+    from: str(raw.from),
+    to: str(raw.to),
+    polynomial: str(raw.polynomial),
+    system: system.length ? system : d.system,
   };
 }
 

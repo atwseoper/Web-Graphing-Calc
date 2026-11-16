@@ -9,7 +9,7 @@
 
 .keypad-bar {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin-bottom: 6px;
 }
 .bar-spacer { flex: 1; }
@@ -45,11 +45,14 @@
 .key.op { background: var(--key-op-bg); }
 .key.var { font-style: italic; font-family: Georgia, "Times New Roman", serif; font-size: 1.25rem; }
 .keys-left .key { font-size: 1rem; }
+.keys-left .key.long { font-size: 0.82rem; letter-spacing: -0.01em; }
 .key.is-pressed { filter: brightness(0.88); transform: translateY(1px); }
 
 .bar-key {
+  flex: none;
   height: 38px;
-  padding: 0 12px;
+  padding: 0 9px;
+  white-space: nowrap;
   background: transparent;
   box-shadow: none;
   font-size: 0.9rem;
@@ -61,7 +64,7 @@
   color: var(--key-text);
 }
 .bar-key.enter {
-  min-width: 56px;
+  min-width: 50px;
   background: var(--accent);
   color: #fff;
 }

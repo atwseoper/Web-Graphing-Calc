@@ -73,6 +73,8 @@ export const WORDS = (() => {
   const words = {};
   for (const name of Object.keys(FUNCTIONS)) words[name] = name;
   for (const [alias, name] of Object.entries(ALIASES)) words[alias] = name;
+  words.sum = 'sum';
+  words.prod = 'prod';
   words.pi = 'π';
   words.theta = 'θ';
   words.ans = 'Ans';
@@ -83,6 +85,9 @@ export const WORDS = (() => {
 export const INVERSE_OF = {
   sin: 'asin', cos: 'acos', tan: 'atan', sinh: 'asinh', cosh: 'acosh', tanh: 'atanh',
 };
+
+// Σ and Π: sum(expr, k, from, to), prod(expr, k, from, to).
+export const SERIES = new Set(['sum', 'prod']);
 
 export function isFunctionName(name) {
   return Object.prototype.hasOwnProperty.call(FUNCTIONS, name);

@@ -4,13 +4,17 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: Phase 1 complete – core graphing works (Cartesian, x = g(y), polar, parametric, points, variables and functions, trace, table of values, calculator, on-screen keypad, auto-save). Next: Phase 2, analysis and the equation solver. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: Phase 2 complete – graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area) and the Solve tab (equations, polynomials, linear systems). Next: Phase 3, data import and regression. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
-## Planned features
+## Features
 
-- Multiple y = f(x), parametric and polar graphs with pan, pinch-zoom and trace
-- Graph analysis: roots, intersections, extrema and integrals with error estimates
-- Equation solver: single equations, solve-for-any-variable, polynomials, linear systems
+- Multiple y = f(x), x = g(y), parametric and polar graphs with pan, pinch-zoom and trace
+- Variables, functions and sliders; piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π
+- Graph analysis: tap a curve to see its roots, extrema, intercepts and intersections; derivative, tangent, integrals with error estimates, polar area
+- Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems
+
+## Planned
+
 - Data import (CSV file or paste) and regression: linear, polynomial and custom models, with full non-linear least squares, parameter standard errors, confidence bands and residuals
 
 ## Development

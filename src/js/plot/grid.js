@@ -1,4 +1,7 @@
 // Draws the Cartesian or polar grid, axes and labels onto a 2D canvas context.
+// Lines are drawn before the curves and labels after them, so a label (with its
+// background-coloured outline) always stays readable – including the 0 at the origin,
+// where many curves pass.
 import { toScreen, worldBounds, niceStep, minorStep, ticks, formatTick } from './viewport.js';
 
 const MIN_MAJOR_PX = 80; // target minimum spacing between labelled grid lines
@@ -95,6 +98,12 @@ export function drawCartesianGrid(ctx, vp, colors) {
   ctx.stroke();
 
   drawAxes(ctx, vp, colors);
+  ctx.restore();
+}
+
+export function drawCartesianLabels(ctx, vp, colors) {
+  const { majorX, majorY } = gridSteps(vp);
+  ctx.save();
   drawAxisLabels(ctx, vp, colors, majorX, majorY);
   ctx.restore();
 }
@@ -105,7 +114,7 @@ const PI_LABELS = {
   210: '7π/6', 240: '4π/3', 270: '3π/2', 300: '5π/3', 330: '11π/6',
 };
 
-export function drawPolarGrid(ctx, vp, colors, angleMode = 'rad') {
+export function drawPolarGrid(ctx, vp, colors) {
   const { xMin, xMax, yMin, yMax } = worldBounds(vp);
   const [ox, oy] = toScreen(vp, 0, 0);
   const step = niceStep(MIN_MAJOR_PX / Math.min(vp.scaleX, vp.scaleY));
@@ -145,6 +154,14 @@ export function drawPolarGrid(ctx, vp, colors, angleMode = 'rad') {
   }
 
   drawAxes(ctx, vp, colors);
+  ctx.restore();
+}
+
+export function drawPolarLabels(ctx, vp, colors, angleMode = 'rad') {
+  const { xMin, xMax } = worldBounds(vp);
+  const [ox, oy] = toScreen(vp, 0, 0);
+  const step = niceStep(MIN_MAJOR_PX / Math.min(vp.scaleX, vp.scaleY));
+  ctx.save();
 
   // Radius labels along the positive x axis.
   ctx.fillStyle = colors.label;

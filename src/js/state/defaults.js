@@ -11,6 +11,17 @@ export function newRow(id, color, text = '') {
     id, text, color, hidden: false,
     domainMin: '', domainMax: '',
     showTable: false, tableStart: '', tableStep: '',
+    sliderMin: '', sliderMax: '',
+    showAnalysis: false, showDeriv: false, atX: '', intFrom: '', intTo: '',
+  };
+}
+
+export function defaultSolve() {
+  return {
+    mode: 'equation', // 'equation' | 'polynomial' | 'system'
+    equation: '', solveFor: '', given: {}, from: '', to: '',
+    polynomial: '',
+    system: ['', ''],
   };
 }
 
@@ -31,6 +42,7 @@ export function defaultState() {
     view: null, // null = home view for the current screen size
     settings: { angle: 'rad', grid: 'cartesian', keypad: 'auto' },
     calc: { history: [] },
+    solve: defaultSolve(),
     ui: { tab: 'graph' },
   };
 }

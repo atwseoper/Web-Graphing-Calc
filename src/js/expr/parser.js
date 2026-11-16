@@ -10,6 +10,13 @@
 //   { type: 'apply', name, args }              name(args): user function call, or
 //                                              multiplication if `name` is a variable
 //   { type: 'tuple', items }                   (a, b)
+//   { type: 'apply', name, args, primes }      f'(x), f''(x): derivative of a user function
+//   { type: 'piecewise', branches: [{ cond, value }], otherwise }
+//                                              {x < 0: -x, x}; value may be null (= 1),
+//                                              otherwise may be null (= undefined)
+//   { type: 'cmp', ops: ['<', '<='...], items } chained comparison, only inside { }
+//   { type: 'series', op: 'sum'|'prod', body, index, from, to }
+//                                              sum(k^2, k, 1, 10)
 //
 // parse() returns { type: 'eq', lhs, rhs } or { type: 'expr', expr }.
 //
@@ -20,11 +27,18 @@
 // factors as their argument: sin 2x = sin(2x), sin x cos x = sin(x)·cos(x),
 // sin x^2 = sin(x^2), sin x + 1 = sin(x) + 1.
 // sin^2 x = (sin x)^2 and sin^-1 x = asin x.
+//
+// Conditions use braces: {x < 0: -x, x} is -x when x < 0 and x otherwise; a branch
+// without ':' restricts, so x^2{0 < x < 2} is x^2 for 0 < x < 2 and undefined elsewhere.
+// Comparisons are only allowed inside braces.
 import { ExprError } from './errors.js';
 import { tokenize } from './tokenizer.js';
-import { isFunctionName, INVERSE_OF } from './builtins.js';
+import { isFunctionName, INVERSE_OF, SERIES } from './builtins.js';
 
 const BP = { add: 10, mul: 20, neg: 30, pow: 40, fact: 50 };
+const COMPARISONS = new Set(['<', '>', '<=', '>=']);
+const STOPPERS = new Set([')', ',', '=', '}', ':']);
+const isCallable = (name) => isFunctionName(name) || SERIES.has(name);
 
 export function parse(src) {
   const p = new Parser(tokenize(src));
@@ -58,6 +72,7 @@ class Parser {
   constructor(tokens) {
     this.tokens = tokens;
     this.pos = 0;
+    this.allowCmp = false; // true while parsing the operands of a condition
   }
 
   peek(offset = 0) {
@@ -82,13 +97,14 @@ class Parser {
     const t = this.peek();
     if (t.type === 'eof') return;
     if (t.type === 'op' && t.value === ')') throw new ExprError("Unmatched ')'", t.start, t.end);
+    if (t.type === 'op' && t.value === '}') throw new ExprError("Unmatched '}'", t.start, t.end);
     throw new ExprError(`Unexpected ${describe(t)}`, t.start, t.end);
   }
 
   // Can this token start an operand that follows another operand directly
   // (implicit multiplication)? Numbers cannot: "x2" and "2 3" are errors.
   startsImplicitOperand(t) {
-    return t.type === 'name' || (t.type === 'op' && t.value === '(');
+    return t.type === 'name' || (t.type === 'op' && (t.value === '(' || t.value === '{'));
   }
 
   expr(minBp) {
@@ -120,6 +136,10 @@ class Parser {
           left = { type: 'fact', arg: left, start: left.start, end: t.end };
           continue;
         }
+        if (COMPARISONS.has(op)) {
+          if (this.allowCmp) return left;
+          throw new ExprError('Inequalities aren\'t supported yet. For a condition, use braces: {x > 0: x}', t.start, t.end);
+        }
       }
       if (this.startsImplicitOperand(t) && BP.mul > minBp) {
         const right = this.expr(BP.mul);
@@ -136,7 +156,7 @@ class Parser {
   // Parse the right-hand operand of a binary operator, with a friendly error if it's missing.
   operand(bp, opTok) {
     const t = this.peek();
-    if (t.type === 'eof' || (t.type === 'op' && (t.value === ')' || t.value === ',' || t.value === '='))) {
+    if (t.type === 'eof' || (t.type === 'op' && (STOPPERS.has(t.value) || COMPARISONS.has(t.value)))) {
       throw new ExprError(`Expected an expression after '${opTok.value}'`, opTok.start, opTok.end);
     }
     return this.expr(bp);
@@ -153,17 +173,37 @@ class Parser {
       }
       if (t.value === '+') return this.operand(BP.neg, t);
       if (t.value === '(') return this.parenthesised(t);
+      if (t.value === '{') return this.piecewise(t);
       if (t.value === ')') throw new ExprError("Unexpected ')'", t.start, t.end);
+      if (t.value === "'") throw new ExprError("A ' (derivative) goes after a function name, e.g. f'(x)", t.start, t.end);
       throw new ExprError(`Unexpected '${t.value}'`, t.start, t.end);
     }
 
     if (t.type === 'name') {
-      if (isFunctionName(t.value)) return this.functionCall(t);
-      if (this.isOp('(') && !isFunctionName(t.value)) {
+      if (SERIES.has(t.value)) return this.series(t);
+      if (isFunctionName(t.value)) {
+        if (this.isOp("'")) {
+          const q = this.peek();
+          throw new ExprError(`Derivatives work on your own functions: define f(x) = ${t.value}(x), then use f'(x)`, t.start, q.end);
+        }
+        return this.functionCall(t);
+      }
+      let primes = 0;
+      let primeEnd = t.end;
+      while (this.isOp("'")) {
+        primeEnd = this.next().end;
+        primes++;
+      }
+      if (this.isOp('(')) {
         const open = this.next();
         const args = this.argList(open);
         const close = this.tokens[this.pos - 1];
-        return { type: 'apply', name: t.value, args, nameStart: t.start, nameEnd: t.end, start: t.start, end: close.end };
+        const node = { type: 'apply', name: t.value, args, nameStart: t.start, nameEnd: primeEnd, start: t.start, end: close.end };
+        if (primes) node.primes = primes;
+        return node;
+      }
+      if (primes) {
+        throw new ExprError(`Write the derivative with brackets, e.g. ${t.value}${"'".repeat(primes)}(x)`, t.start, primeEnd);
       }
       return { type: 'sym', name: t.value, start: t.start, end: t.end };
     }
@@ -192,6 +232,74 @@ class Parser {
     }
     const close = this.expectOp(')', open);
     return { ...first, start: open.start, end: close.end, parens: true };
+  }
+
+  // { cond: value, cond: value, otherwise } after '{' has been consumed.
+  piecewise(open) {
+    if (this.isOp('}')) {
+      const close = this.next();
+      throw new ExprError('Empty braces', open.start, close.end);
+    }
+    const branches = [];
+    let otherwise = null;
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof') throw new ExprError("Missing '}'", open.start, t.end);
+      const saved = this.allowCmp;
+      this.allowCmp = true;
+      const first = this.expr(0);
+      let cond = null;
+      if (this.peek().type === 'op' && COMPARISONS.has(this.peek().value)) {
+        const ops = [];
+        const items = [first];
+        while (this.peek().type === 'op' && COMPARISONS.has(this.peek().value)) {
+          const opTok = this.next();
+          ops.push(opTok.value);
+          items.push(this.operand(0, opTok));
+        }
+        cond = { type: 'cmp', ops, items, start: first.start, end: items[items.length - 1].end };
+      }
+      this.allowCmp = saved;
+      if (otherwise) {
+        throw new ExprError('The value for "otherwise" must come last', otherwise.start, otherwise.end);
+      }
+      if (this.isOp(':')) {
+        const colon = this.next();
+        if (!cond) throw new ExprError("Expected a condition before ':', e.g. {x < 0: -x, x}", first.start, colon.end);
+        branches.push({ cond, value: this.operand(0, colon) });
+      } else if (cond) {
+        branches.push({ cond, value: null });
+      } else {
+        otherwise = first;
+      }
+      if (this.isOp(',')) {
+        const comma = this.next();
+        if (this.isOp('}')) throw new ExprError("Expected a condition or value after ','", comma.start, comma.end);
+        continue;
+      }
+      const close = this.expectOp('}', open);
+      if (!branches.length) throw new ExprError('Braces need a condition, e.g. {x > 0}', open.start, close.end);
+      return { type: 'piecewise', branches, otherwise, start: open.start, end: close.end };
+    }
+  }
+
+  // sum(body, k, from, to) / prod(...)
+  series(nameTok) {
+    const label = nameTok.value;
+    if (!this.isOp('(')) {
+      throw new ExprError(`Write ${label}(expression, k, from, to), e.g. ${label}(k^2, k, 1, 10)`, nameTok.start, nameTok.end);
+    }
+    const open = this.next();
+    const args = this.argList(open);
+    const end = this.tokens[this.pos - 1].end;
+    if (args.length !== 4) {
+      throw new ExprError(`${label} takes 4 arguments: ${label}(expression, k, from, to)`, nameTok.start, end);
+    }
+    const [body, index, from, to] = args;
+    if (index.type !== 'sym' || index.parens) {
+      throw new ExprError(`The second argument of ${label} must be the counting letter, e.g. k`, index.start, index.end);
+    }
+    return { type: 'series', op: label, body, index: index.name, from, to, start: nameTok.start, end, nameStart: nameTok.start, nameEnd: nameTok.end };
   }
 
   // After '(' has been consumed: comma-separated expressions then ')'.
@@ -238,14 +346,14 @@ class Parser {
       end = this.tokens[this.pos - 1].end;
     } else {
       const t = this.peek();
-      if (t.type === 'eof' || (t.type === 'op' && !['(', '-', '+'].includes(t.value))) {
+      if (t.type === 'eof' || (t.type === 'op' && !['(', '-', '+', '{'].includes(t.value))) {
         throw new ExprError(`${nameTok.value} needs an argument, e.g. ${nameTok.value}(x)`, nameTok.start, nameTok.end);
       }
       // Argument without brackets: a product of non-function factors.
       let arg = this.expr(BP.mul + 1);
       for (;;) {
         const n = this.peek();
-        if (n.type === 'name' && !isFunctionName(n.value)) {
+        if (n.type === 'name' && !isCallable(n.value)) {
           arg = bin('*', arg, this.expr(BP.mul + 1), true);
         } else if (n.type === 'op' && n.value === '(') {
           arg = bin('*', arg, this.expr(BP.mul + 1), true);
@@ -279,7 +387,7 @@ class Parser {
       this.next();
       return this.parenthesised(t);
     }
-    if (t.type === 'name' && !isFunctionName(t.value)) {
+    if (t.type === 'name' && !isCallable(t.value)) {
       this.next();
       return { type: 'sym', name: t.value, start: t.start, end: t.end };
     }

@@ -1,20 +1,42 @@
 // The graph canvas: sizing, drawing, and pan / pinch / wheel / double-tap / trace.
+// Also draws the analysis overlays (derivative, tangent, shaded integrals) and the
+// points of interest (roots, extrema, intercepts, intersections) of selected curves.
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport,
 } from '../plot/viewport.js';
-import { drawCartesianGrid, drawPolarGrid } from '../plot/grid.js';
 import {
-  sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
+  drawCartesianGrid, drawCartesianLabels, drawPolarGrid, drawPolarLabels,
+} from '../plot/grid.js';
+import {
+  sampleCurve, sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
 } from '../plot/sample.js';
-import { drawLines, drawPoint, drawMarker } from '../plot/render.js';
+import {
+  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan,
+} from '../plot/render.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
+import { pointsOfInterest } from '../numerics/analysis.js';
 
 const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function']);
 const TAP_SLOP = 8; // px of movement still counted as a tap
 const DOUBLE_TAP_MS = 320;
+const POI_NAMES = {
+  root: 'Root', max: 'Maximum', min: 'Minimum', 'y-intercept': 'y-intercept', intersection: 'Intersection',
+};
 
 export function isPlottable(result) {
   return !!result && PLOTTABLE.has(result.kind) && (result.kind !== 'function' || !!result.f) && !result.domainError;
+}
+
+// y = f(x) rows (including f(x) = … definitions in x) that analysis works on.
+export function isFunctionOfX(result) {
+  return !!result && (result.kind === 'cartesian' || (result.kind === 'function' && !!result.f));
+}
+
+// Evaluate an optional number field of a row ('' -> null).
+export function fieldValue(analysis, text) {
+  if (!text || !text.trim()) return null;
+  const r = analysis.evaluate(text);
+  return !r.error && Number.isFinite(r.value) ? r.value : null;
 }
 
 export function createGraphView({ canvas, store, getAnalysis }) {
@@ -27,6 +49,14 @@ export function createGraphView({ canvas, store, getAnalysis }) {
   const pointers = new Map();
   let gesture = null;
   let lastTap = null;
+  let selectedId = null; // curve whose points of interest are shown
+  let poiSel = null; // tapped point of interest { rowId, x, y, label }
+  let drawnPois = []; // [{ rowId, sx, sy, x, y, label, color }] for hit testing
+  let pendingFrame = null; // [x0, x1] to show once the canvas has a size
+  let interacting = false;
+  let wheelTimer = 0;
+  const poiCache = { analysis: null, map: new Map() };
+  const listeners = new Set();
 
   const coarse = window.matchMedia('(pointer: coarse)');
 
@@ -43,6 +73,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     vp = next;
     persistView();
     requestDraw();
+    for (const l of listeners) l();
   }
 
   // ---- sizing --------------------------------------------------------------------
@@ -57,6 +88,13 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     if (!vp) {
       const saved = store.get().view;
       vp = saved ? createViewport({ width: w, height: hgt, ...saved }) : homeViewport(w, hgt);
+      for (const l of listeners) l();
+      if (pendingFrame) {
+        const [x0, x1] = pendingFrame;
+        pendingFrame = null;
+        frameX(x0, x1);
+        return;
+      }
     } else if (vp.width !== w) {
       // Width changed (rotation, sidebar): keep the centre where it is.
       vp = { ...vp, width: w, height: hgt };
@@ -113,14 +151,22 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, vp.width, vp.height);
 
-    if (state.settings.grid === 'polar') drawPolarGrid(ctx, vp, colors, analysis.angle);
+    const polarGrid = state.settings.grid === 'polar';
+    if (polarGrid) drawPolarGrid(ctx, vp, colors);
     else drawCartesianGrid(ctx, vp, colors);
 
     const angleFactor = analysis.angle === 'deg' ? Math.PI / 180 : 1;
-    curves = [];
+    const visible = [];
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
-      if (row.hidden || !isPlottable(r)) return;
+      if (!row.hidden && isPlottable(r)) visible.push({ row, r });
+    });
+
+    // Shaded integrals and polar areas go underneath the curves.
+    for (const { row, r } of visible) if (row.showAnalysis) drawShading(row, r, analysis, angleFactor);
+
+    curves = [];
+    for (const { row, r } of visible) {
       const lines = sampleRow(r, angleFactor);
       curves.push({ rowId: row.id, kind: r.kind, color: row.color, lines, result: r });
       if (r.kind === 'point') {
@@ -128,9 +174,152 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       } else {
         drawLines(ctx, lines, row.color);
       }
-    });
+    }
 
+    for (const { row, r } of visible) if (row.showAnalysis && isFunctionOfX(r)) drawOverlays(row, r, analysis);
+
+    if (polarGrid) drawPolarLabels(ctx, vp, colors, analysis.angle);
+    else drawCartesianLabels(ctx, vp, colors);
+
+    drawPointsOfInterest(visible);
     drawTrace(analysis);
+    drawSelectedPoi();
+  }
+
+  // ---- analysis overlays ---------------------------------------------------------------
+
+  function drawShading(row, r, analysis, angleFactor) {
+    const a = fieldValue(analysis, row.intFrom);
+    const b = fieldValue(analysis, row.intTo);
+    if (isFunctionOfX(r)) {
+      if (a === null || b === null || a === b) return;
+      const { xMin, xMax } = worldBounds(vp);
+      const pad = 2 / vp.scaleX;
+      const lo = Math.max(Math.min(a, b), xMin - pad);
+      const hi = Math.min(Math.max(a, b), xMax + pad);
+      if (!(hi > lo)) return;
+      const lines = sampleCurve((x) => {
+        const y = r.f(x);
+        return Number.isFinite(y) ? toScreen(vp, x, y) : null;
+      }, lo, hi, { initial: Math.max(20, ((hi - lo) * vp.scaleX) / 3), maxDepth: 5 });
+      fillToBaseline(ctx, lines, toScreen(vp, 0, 0)[1], row.color, 0.2);
+    } else if (r.kind === 'polar') {
+      const from = a ?? r.domain.min;
+      const to = b ?? r.domain.max;
+      if (!(to > from)) return;
+      const lines = samplePolar(r.f, from, to, vp, angleFactor);
+      const [ox, oy] = toScreen(vp, 0, 0);
+      fillFan(ctx, lines, ox, oy, row.color, 0.18);
+    }
+  }
+
+  function drawOverlays(row, r, analysis) {
+    const d = row.showDeriv || row.atX ? r.derivative() : null;
+    if (row.showDeriv && d) {
+      drawLines(ctx, sampleCartesian(d.f, vp), row.color, 2, { dash: [7, 6], alpha: 0.85 });
+    }
+    const a = fieldValue(analysis, row.atX);
+    if (a === null) return;
+    const y0 = r.f(a);
+    if (!Number.isFinite(y0)) return;
+    const m = d ? d.f(a) : NaN;
+    if (Number.isFinite(m)) {
+      const { xMin, xMax } = worldBounds(vp);
+      const p0 = toScreen(vp, xMin, y0 + m * (xMin - a));
+      const p1 = toScreen(vp, xMax, y0 + m * (xMax - a));
+      drawLines(ctx, [{ x: [p0[0], p1[0]], y: [p0[1], p1[1]] }], row.color, 1.5, { alpha: 0.75 });
+    }
+    const [sx, sy] = toScreen(vp, a, y0);
+    drawPoi(ctx, sx, sy, row.color, colors, true);
+  }
+
+  // ---- points of interest ----------------------------------------------------------------
+
+  // Points of interest for one y = f(x) curve in the visible x range, cached per view.
+  // others: [{ id, f, df }] for intersections. Returns null while the view is moving
+  // and nothing is cached (it is computed once the gesture ends).
+  function computePois(rowId, r, others, allowCompute = true) {
+    const analysis = getAnalysis();
+    if (poiCache.analysis !== analysis) {
+      poiCache.analysis = analysis;
+      poiCache.map.clear();
+    }
+    const { xMin, xMax } = worldBounds(vp);
+    const key = `${xMin}|${xMax}|${others.map((o) => o.id).join(',')}`;
+    const hit = poiCache.map.get(rowId);
+    if (hit && hit.key === key) return hit.value;
+    if (!allowCompute) return null;
+    const d = r.derivative ? r.derivative() : null;
+    const value = pointsOfInterest({ f: r.f, df: d ? d.f : undefined }, xMin, xMax, {
+      others, samples: Math.round(Math.min(800, Math.max(200, vp.width))),
+    });
+    poiCache.map.set(rowId, { key, value });
+    return value;
+  }
+
+  function othersFor(rowId, visible) {
+    const out = [];
+    for (const { row, r } of visible) {
+      if (row.id === rowId || !isFunctionOfX(r)) continue;
+      const d = r.derivative ? r.derivative() : null;
+      out.push({ id: row.id, f: r.f, df: d ? d.f : undefined });
+    }
+    return out;
+  }
+
+  function labelFor(kinds, x, y) {
+    return `${kinds.map((k) => POI_NAMES[k]).join(' · ')} (${formatNumber(x, 7)}, ${formatNumber(y, 7)})`;
+  }
+
+  // Merge points that coincide on screen (a double root is also a minimum, etc.).
+  function mergePois(pois) {
+    const out = [];
+    for (const p of pois) {
+      const [sx, sy] = toScreen(vp, p.x, p.y);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx < -10 || sx > vp.width + 10 || sy < -10 || sy > vp.height + 10) continue;
+      const same = out.find((q) => Math.hypot(q.sx - sx, q.sy - sy) < 3);
+      if (same) {
+        if (!same.kinds.includes(p.kind)) same.kinds.push(p.kind);
+      } else {
+        out.push({ ...p, sx, sy, kinds: [p.kind] });
+      }
+    }
+    return out;
+  }
+
+  function drawPointsOfInterest(visible) {
+    drawnPois = [];
+    const ids = new Set();
+    if (selectedId !== null) ids.add(selectedId);
+    for (const { row, r } of visible) if (row.showAnalysis && isFunctionOfX(r)) ids.add(row.id);
+    for (const { row, r } of visible) {
+      if (!ids.has(row.id) || !isFunctionOfX(r)) continue;
+      const others = row.id === selectedId ? othersFor(row.id, visible) : [];
+      const pois = computePois(row.id, r, others, !interacting);
+      if (!pois) continue;
+      for (const p of mergePois(pois)) {
+        const label = labelFor(p.kinds, p.x, p.y);
+        drawPoi(ctx, p.sx, p.sy, row.color, colors);
+        drawnPois.push({ rowId: row.id, sx: p.sx, sy: p.sy, x: p.x, y: p.y, label, color: row.color });
+      }
+    }
+  }
+
+  function drawSelectedPoi() {
+    if (!poiSel) return;
+    const [sx, sy] = toScreen(vp, poiSel.x, poiSel.y);
+    if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
+    drawMarker(ctx, sx, sy, poiSel.color, poiSel.label, colors, vp.width, vp.height);
+  }
+
+  function hitPoi(sx, sy, pointerType) {
+    const radius = pointerType === 'mouse' ? 9 : 20;
+    let best = null;
+    for (const p of drawnPois) {
+      const d = Math.hypot(p.sx - sx, p.sy - sy);
+      if (d <= radius && (!best || d < best.d)) best = { d, p };
+    }
+    return best && best.p;
   }
 
   function drawTrace(analysis) {
@@ -242,9 +431,19 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       return;
     }
     if (pointers.size > 2) return;
+    const poi = hitPoi(p.x, p.y, e.pointerType);
+    if (poi) {
+      poiSel = poi;
+      trace = null;
+      gesture = { type: 'pan', vp0: vp, start: p, time: e.timeStamp, moved: false, onPoi: true };
+      requestDraw();
+      return;
+    }
     const hit = hitCurve(p.x, p.y, e.pointerType);
     if (hit) {
       gesture = { type: 'trace', curve: hit.curve, start: p, time: e.timeStamp, moved: false };
+      poiSel = null;
+      select(hit.curve.rowId);
       setTraceFrom(hit.curve, p.x, p.y);
     } else {
       gesture = { type: 'pan', vp0: vp, start: p, time: e.timeStamp, moved: false };
@@ -257,6 +456,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     pointers.set(e.pointerId, p);
     if (!gesture) return;
     if (gesture.type === 'pinch' && pointers.size >= 2) {
+      interacting = true;
       const [a, b] = [...pointers.values()];
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const factor = Math.hypot(a.x - b.x, a.y - b.y) / gesture.dist0;
@@ -269,6 +469,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     if (!gesture.moved && Math.hypot(dx, dy) > TAP_SLOP) gesture.moved = true;
     if (gesture.type === 'pan' && gesture.moved) {
       if (trace) trace = null;
+      interacting = true;
       setViewport(panBy(gesture.vp0, dx, dy));
     } else if (gesture.type === 'trace') {
       setTraceFrom(gesture.curve, p.x, p.y);
@@ -279,6 +480,10 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     if (!pointers.has(e.pointerId)) return;
     const p = pointers.get(e.pointerId);
     pointers.delete(e.pointerId);
+    if (pointers.size === 0 && interacting) {
+      interacting = false;
+      requestDraw(); // now work out the points of interest for the new view
+    }
     if (gesture && gesture.type === 'pinch') {
       if (pointers.size === 1) {
         // Continue as a pan with the remaining finger.
@@ -294,10 +499,11 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     gesture = null;
     if (e.type === 'pointercancel' || g.moved) return;
 
-    // A tap.
-    if (g.type === 'pan' && trace) {
+    // A tap. On empty space it clears the trace, the tapped point and the selection.
+    if (g.type === 'pan' && !g.onPoi && (trace || poiSel || selectedId !== null)) {
       trace = null;
-      requestDraw();
+      poiSel = null;
+      select(null);
     }
     if (lastTap && e.timeStamp - lastTap.time < DOUBLE_TAP_MS && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
       lastTap = null;
@@ -315,6 +521,12 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     const p = localPoint(e);
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const k = e.ctrlKey ? 0.01 : 0.0015; // ctrlKey = trackpad pinch
+    interacting = true;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      interacting = false;
+      requestDraw();
+    }, 160);
     setViewport(zoomAt(vp, p.x, p.y, Math.exp(-e.deltaY * unit * k)));
   }, { passive: false });
 
@@ -411,5 +623,58 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     setViewport(next);
   }
 
-  return { requestDraw, zoomBy, home, fit, isCoarse: () => coarse.matches };
+  // Show x0 ≤ x ≤ x1 (keeping the y centre), then fit the graphs vertically.
+  function frameX(x0, x1) {
+    if (!vp) {
+      pendingFrame = [x0, x1];
+      return;
+    }
+    const span = x1 - x0;
+    if (!(span > 0) || !Number.isFinite(span)) return;
+    setViewport({ ...vp, cx: (x0 + x1) / 2, scaleX: vp.width / span });
+    fit();
+  }
+
+  function select(rowId) {
+    if (selectedId === rowId) return;
+    selectedId = rowId;
+    if (poiSel && poiSel.rowId !== rowId) poiSel = null;
+    requestDraw();
+  }
+
+  // Points of interest of a row in the current view, for the analysis panel.
+  // Returns { pois, xMin, xMax } or null when the graph isn't showing.
+  function pointsFor(rowId) {
+    if (!vp) return null;
+    const state = store.get();
+    const analysis = getAnalysis();
+    const visible = [];
+    let target = null;
+    state.rows.forEach((row, i) => {
+      const r = analysis.rows[i];
+      if (row.hidden || !isPlottable(r)) return;
+      visible.push({ row, r });
+      if (row.id === rowId) target = r;
+    });
+    if (!target || !isFunctionOfX(target)) return null;
+    const others = othersFor(rowId, visible);
+    const pois = computePois(`panel:${rowId}`, target, others);
+    const { xMin, xMax } = worldBounds(vp);
+    return { pois, xMin, xMax };
+  }
+
+  // Highlight a point (from the analysis panel) as if it had been tapped.
+  function showPoint(rowId, x, y, kind) {
+    const row = store.get().rows.find((r) => r.id === rowId);
+    poiSel = { rowId, x, y, label: labelFor([kind], x, y), color: row ? row.color : colors?.label };
+    trace = null;
+    select(rowId);
+    requestDraw();
+  }
+
+  return {
+    requestDraw, zoomBy, home, fit, frameX, select, pointsFor, showPoint,
+    onViewChange: (fn) => listeners.add(fn),
+    isCoarse: () => coarse.matches,
+  };
 }

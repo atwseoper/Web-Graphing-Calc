@@ -1,4 +1,4 @@
-// Canvas drawing of sampled curves, points and the trace marker.
+// Canvas drawing of sampled curves, points, shaded regions and markers.
 
 const LIMIT = 20000; // clamp screen coordinates so the canvas never sees huge values
 
@@ -6,10 +6,12 @@ function clamp(v) {
   return v < -LIMIT ? -LIMIT : v > LIMIT ? LIMIT : v;
 }
 
-export function drawLines(ctx, lines, color, width = 2.5) {
+export function drawLines(ctx, lines, color, width = 2.5, { dash = null, alpha = 1 } = {}) {
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
+  ctx.globalAlpha = alpha;
+  if (dash) ctx.setLineDash(dash);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.beginPath();
@@ -22,6 +24,53 @@ export function drawLines(ctx, lines, color, width = 2.5) {
     ctx.moveTo(clamp(x[0]), clamp(y[0]));
     for (let i = 1; i < x.length; i++) ctx.lineTo(clamp(x[i]), clamp(y[i]));
   }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Fill between polylines and the horizontal line at screen y = baseY (∫ f dx).
+export function fillToBaseline(ctx, lines, baseY, color, alpha = 0.2) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  const b = clamp(baseY);
+  for (const { x, y } of lines) {
+    if (x.length < 2) continue;
+    ctx.moveTo(clamp(x[0]), b);
+    for (let i = 0; i < x.length; i++) ctx.lineTo(clamp(x[i]), clamp(y[i]));
+    ctx.lineTo(clamp(x[x.length - 1]), b);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
+// Fill the region swept from the origin (ox, oy) along polylines (polar area).
+export function fillFan(ctx, lines, ox, oy, color, alpha = 0.2) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  for (const { x, y } of lines) {
+    if (x.length < 2) continue;
+    ctx.moveTo(clamp(ox), clamp(oy));
+    for (let i = 0; i < x.length; i++) ctx.lineTo(clamp(x[i]), clamp(y[i]));
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
+// A point of interest: a small hollow dot ringed in the curve colour.
+export function drawPoi(ctx, sx, sy, color, colors, selected = false) {
+  ctx.save();
+  ctx.fillStyle = selected ? color : colors.bg;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(sx, sy, selected ? 6 : 4.5, 0, 2 * Math.PI);
+  ctx.fill();
   ctx.stroke();
   ctx.restore();
 }
