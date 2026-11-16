@@ -70,3 +70,38 @@ test('load and save use the storage object and survive failures', () => {
   assert.deepEqual(load(broken), defaultState());
   assert.equal(save(broken, s), false);
 });
+
+test('data sets and fits survive a save and load, and bad data is dropped', async () => {
+  const { newDataSet } = await import('../src/js/data/table.js');
+  const { newFit } = await import('../src/js/state/defaults.js');
+  const s = defaultState();
+  const set = newDataSet(4, PALETTE[2], 'Pendulum', [
+    { x: 1, y: 2.5, s: 0.1, off: false },
+    { x: 2, y: null, s: null, off: true },
+  ], { hasSigma: true, decimal: 'comma', xName: 'L', yName: 'T' });
+  set.fits.push(newFit(5, PALETTE[3], 'custom', { custom: 'a x^b', start: { a: '2' }, bands: 'both' }));
+  s.data = { sets: [set], nextId: 6, active: 4 };
+  assert.deepEqual(deserialize(serialize(s)), s);
+  assert.match(serialize(s), /"points":\[\[1,2\.5,0\.1,0\],\[2,null,null,1\]\]/);
+
+  const bad = deserialize(JSON.stringify({
+    version: 1,
+    data: {
+      nextId: 1,
+      active: 99,
+      sets: [
+        { id: 2, name: 'ok', color: 'blue', points: [[1, 'x', -1, 0], 'junk', [3, 4]], fits: [{ id: 2, model: 'line' }, { id: 3, model: 'magic' }, { id: 7, model: 'poly', degree: 9 }] },
+        { id: 2, name: 'duplicate id', points: [] },
+        { name: 'no id', points: [] },
+      ],
+    },
+  }));
+  assert.equal(bad.data.sets.length, 1);
+  const d = bad.data.sets[0];
+  assert.deepEqual(d.points, [{ x: 1, y: null, s: null, off: false }, { x: 3, y: 4, s: null, off: false }]);
+  assert.deepEqual(d.fits.map((f) => [f.id, f.model, f.degree]), [[7, 'poly', 2]]);
+  assert.equal(d.color, PALETTE[0]);
+  assert.equal(bad.data.active, 2);
+  assert.equal(bad.data.nextId, 8);
+  assert.deepEqual(deserialize(JSON.stringify({ version: 1 })).data, { sets: [], nextId: 1, active: null });
+});

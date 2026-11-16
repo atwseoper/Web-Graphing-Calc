@@ -1,0 +1,115 @@
+// Data sets: helpers for the points of a set. Pure module – no DOM access.
+//
+// A data set is
+//   { id, name, color, hidden, decimal: 'point'|'comma', xName, yName, hasSigma,
+//     points: [{ x, y, s, off }], fits: [...] }
+// x, y and s are numbers or null (a blank or unreadable cell). off: left out of fits.
+import { formatCell } from './number.js';
+
+export const MAX_SETS = 20;
+
+export function newDataSet(id, color, name, points = [], extra = {}) {
+  return {
+    id, name: name || `Data ${id}`, color, hidden: false,
+    decimal: 'point', xName: 'x', yName: 'y', hasSigma: false,
+    points, fits: [],
+    ...extra,
+  };
+}
+
+export const blankPoint = () => ({ x: null, y: null, s: null, off: false });
+
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// Points that can be plotted (finite x and y), with their index in the set.
+export function plottablePoints(set) {
+  const out = [];
+  set.points.forEach((p, i) => {
+    if (finite(p.x) && finite(p.y)) out.push({ ...p, i });
+  });
+  return out;
+}
+
+// The points used in a fit: included, with finite x and y. With weights (σy column in
+// use) a point also needs σy > 0. Returns { x, y, s, index } as plain arrays.
+export function fitPoints(set, { weighted = false } = {}) {
+  const x = [];
+  const y = [];
+  const s = [];
+  const index = [];
+  set.points.forEach((p, i) => {
+    if (p.off || !finite(p.x) || !finite(p.y)) return;
+    if (weighted && !(finite(p.s) && p.s > 0)) return;
+    x.push(p.x);
+    y.push(p.y);
+    s.push(weighted ? p.s : 1);
+    index.push(i);
+  });
+  return { x, y, s: weighted ? s : null, index };
+}
+
+export function summary(set) {
+  let used = 0;
+  let off = 0;
+  let incomplete = 0;
+  let noSigma = 0;
+  for (const p of set.points) {
+    if (!finite(p.x) || !finite(p.y)) {
+      // A row with something in it but no x or no y (an empty new row doesn't count).
+      if (p.x !== null || p.y !== null || p.s !== null) incomplete++;
+      continue;
+    }
+    if (p.off) off++;
+    else {
+      used++;
+      if (set.hasSigma && !(finite(p.s) && p.s > 0)) noSigma++;
+    }
+  }
+  return { total: set.points.length, used, off, incomplete, noSigma };
+}
+
+// Range of the plottable points of visible sets: { xMin, xMax, yMin, yMax } or null.
+// With σy, the error bars are included.
+export function dataBounds(sets) {
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const set of sets) {
+    if (set.hidden) continue;
+    for (const p of set.points) {
+      if (!finite(p.x) || !finite(p.y)) continue;
+      const e = set.hasSigma && finite(p.s) ? Math.abs(p.s) : 0;
+      if (p.x < xMin) xMin = p.x;
+      if (p.x > xMax) xMax = p.x;
+      if (p.y - e < yMin) yMin = p.y - e;
+      if (p.y + e > yMax) yMax = p.y + e;
+    }
+  }
+  return xMin <= xMax ? { xMin, xMax, yMin, yMax } : null;
+}
+
+// CSV text for a data set. Decimal commas use ';' between fields (as European
+// spreadsheets expect); otherwise ','.
+export function toCsv(set, { decimal = set.decimal || 'point' } = {}) {
+  const sep = decimal === 'comma' ? ';' : ',';
+  const quote = (t) => (/[",;\n\r]/.test(t) || /^\s|\s$/.test(t) ? `"${t.replaceAll('"', '""')}"` : t);
+  const anyOff = set.points.some((p) => p.off);
+  const head = [set.xName || 'x', set.yName || 'y'];
+  if (set.hasSigma) head.push(`σ${set.yName || 'y'}`);
+  if (anyOff) head.push('included');
+  const lines = [head.map(quote).join(sep)];
+  for (const p of set.points) {
+    const cells = [formatCell(p.x, decimal), formatCell(p.y, decimal)];
+    if (set.hasSigma) cells.push(formatCell(p.s, decimal));
+    if (anyOff) cells.push(p.off ? 'no' : 'yes');
+    lines.push(cells.join(sep));
+  }
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+// A short name for a data set from a file name: "pendulum data.csv" -> "pendulum data".
+export function nameFromFile(fileName) {
+  const base = String(fileName || '').replace(/^.*[\\/]/, '').replace(/\.(csv|tsv|txt|dat|tab)$/i, '').trim();
+  return base.slice(0, 40);
+}

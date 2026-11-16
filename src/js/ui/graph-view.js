@@ -1,6 +1,7 @@
 // The graph canvas: sizing, drawing, and pan / pinch / wheel / double-tap / trace.
-// Also draws the analysis overlays (derivative, tangent, shaded integrals) and the
-// points of interest (roots, extrema, intercepts, intersections) of selected curves.
+// Also draws the analysis overlays (derivative, tangent, shaded integrals), the
+// points of interest (roots, extrema, intercepts, intersections) of selected curves,
+// and the data sets from the Data tab (points and error bars).
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport,
 } from '../plot/viewport.js';
@@ -11,8 +12,9 @@ import {
   sampleCurve, sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
 } from '../plot/sample.js';
 import {
-  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan,
+  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars,
 } from '../plot/render.js';
+import { dataBounds } from '../data/table.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
 import { pointsOfInterest } from '../numerics/analysis.js';
 
@@ -176,6 +178,8 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       }
     }
 
+    drawData(state);
+
     for (const { row, r } of visible) if (row.showAnalysis && isFunctionOfX(r)) drawOverlays(row, r, analysis);
 
     if (polarGrid) drawPolarLabels(ctx, vp, colors, analysis.angle);
@@ -184,6 +188,42 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     drawPointsOfInterest(visible);
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // ---- data sets ------------------------------------------------------------------------
+
+  // Points of the visible data sets (left-out points as rings) with σy error bars. Each
+  // set becomes a 'scatter' entry in curves so its points can be tapped and traced.
+  function drawData(state) {
+    const sets = state.data ? state.data.sets : [];
+    for (const set of sets) {
+      if (set.hidden) continue;
+      const on = { x: [], y: [] };
+      const off = { x: [], y: [] };
+      const bars = { x: [], lo: [], hi: [] };
+      const all = { x: [], y: [], i: [] };
+      set.points.forEach((p, i) => {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+        const [sx, sy] = toScreen(vp, p.x, p.y);
+        const target = p.off ? off : on;
+        target.x.push(sx);
+        target.y.push(sy);
+        all.x.push(sx);
+        all.y.push(sy);
+        all.i.push(i);
+        if (set.hasSigma && p.s > 0) {
+          bars.x.push(sx);
+          bars.lo.push(toScreen(vp, p.x, p.y - p.s)[1]);
+          bars.hi.push(toScreen(vp, p.x, p.y + p.s)[1]);
+        }
+      });
+      const n = all.x.length;
+      const radius = n > 5000 ? 2.5 : n > 500 ? 3.25 : 4;
+      drawErrorBars(ctx, bars.x, bars.lo, bars.hi, set.color);
+      drawScatter(ctx, off.x, off.y, set.color, { radius, hollow: true, alpha: 0.7 });
+      drawScatter(ctx, on.x, on.y, set.color, { radius });
+      curves.push({ rowId: `set:${set.id}`, kind: 'scatter', color: set.color, lines: [], points: all, result: { kind: 'scatter', set } });
+    }
   }
 
   // ---- analysis overlays ---------------------------------------------------------------
@@ -367,9 +407,26 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       }
       case 'point':
         return { x: r.x, y: r.y, label: fmt(r.x, r.y) };
+      case 'scatter': {
+        const p = r.set.points[tr.i];
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+        const sig = r.set.hasSigma && p.s > 0 ? ` ± ${formatNumber(p.s, 4)}` : '';
+        return { x: p.x, y: p.y, label: `(${formatNumber(p.x, 8)}, ${formatNumber(p.y, 8)}${sig})${p.off ? ' · left out' : ''}` };
+      }
       default:
         return null;
     }
+  }
+
+  // Nearest data point of a scatter entry to (sx, sy): { i, dist }.
+  function nearestPoint(curve, sx, sy) {
+    const { x, y, i } = curve.points;
+    let best = null;
+    for (let k = 0; k < x.length; k++) {
+      const d = Math.hypot(x[k] - sx, y[k] - sy);
+      if (!best || d < best.dist) best = { i: i[k], dist: d };
+    }
+    return best;
   }
 
   // ---- hit testing -------------------------------------------------------------------
@@ -377,8 +434,8 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     const radius = pointerType === 'mouse' ? 10 : 24;
     let best = null;
     for (const c of curves) {
-      const hit = nearestOnLines(c.lines, sx, sy);
-      if (hit && hit.dist <= (c.kind === 'point' ? radius + 6 : radius) && (!best || hit.dist < best.hit.dist)) {
+      const hit = c.kind === 'scatter' ? nearestPoint(c, sx, sy) : nearestOnLines(c.lines, sx, sy);
+      if (hit && hit.dist <= (c.kind === 'point' || c.kind === 'scatter' ? radius + 6 : radius) && (!best || hit.dist < best.hit.dist)) {
         best = { curve: c, hit };
       }
     }
@@ -398,6 +455,11 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       case 'point':
         trace = { rowId: curve.rowId, kind: 'point' };
         break;
+      case 'scatter': {
+        const hit = nearestPoint(curve, sx, sy);
+        if (hit) trace = { rowId: curve.rowId, kind: 'scatter', i: hit.i };
+        break;
+      }
       default: {
         const hit = nearestOnLines(curve.lines, sx, sy);
         if (hit) trace = { rowId: curve.rowId, kind: curve.kind, t: hit.t };
@@ -548,7 +610,8 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     const { xMin, xMax, yMin, yMax } = worldBounds(vp);
     const xs = [];
     const ys = [];
-    let only1D = true;
+    let only1D = true; // only y = f(x) / x = g(y) curves: fit one direction
+    let round = false; // parametric, polar or point rows: keep circles round
     const N = 400;
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
@@ -565,6 +628,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
         }
       } else {
         only1D = false;
+        round = true;
         if (r.kind === 'point') {
           xs.push(r.x);
           ys.push(r.y);
@@ -588,6 +652,12 @@ export function createGraphView({ canvas, store, getAnalysis }) {
         }
       }
     });
+    const data = dataBounds(state.data ? state.data.sets : []);
+    if (data) {
+      only1D = false;
+      xs.push(data.xMin, data.xMax);
+      ys.push(data.yMin, data.yMax);
+    }
     if (!xs.length && !ys.length) return;
 
     const range = (arr) => {
@@ -613,8 +683,8 @@ export function createGraphView({ canvas, store, getAnalysis }) {
       next.cx = (lo + hi) / 2;
       if (span > 1e-12) next.scaleX = (vp.width * (1 - 2 * pad)) / span;
     }
-    if (!only1D) {
-      // Keep circles round when fitting curves in both directions.
+    if (round) {
+      // Keep circles round when fitting parametric and polar curves.
       const s = Math.min(next.scaleX, next.scaleY);
       next.scaleX = s;
       next.scaleY = s;
@@ -633,6 +703,24 @@ export function createGraphView({ canvas, store, getAnalysis }) {
     if (!(span > 0) || !Number.isFinite(span)) return;
     setViewport({ ...vp, cx: (x0 + x1) / 2, scaleX: vp.width / span });
     fit();
+  }
+
+  // Show a rectangle of the plane, with a margin (e.g. a newly imported data set).
+  function frameBounds({ xMin, xMax, yMin, yMax }) {
+    if (!vp) return;
+    let w = xMax - xMin;
+    let hgt = yMax - yMin;
+    if (!(w > 0)) w = Math.max(Math.abs(xMin), 1);
+    if (!(hgt > 0)) hgt = Math.max(Math.abs(yMin), 1);
+    const pad = 0.1;
+    trace = null;
+    setViewport({
+      ...vp,
+      cx: (xMin + xMax) / 2,
+      cy: (yMin + yMax) / 2,
+      scaleX: vp.width / (w * (1 + 2 * pad)),
+      scaleY: vp.height / (hgt * (1 + 2 * pad)),
+    });
   }
 
   function select(rowId) {
@@ -673,7 +761,7 @@ export function createGraphView({ canvas, store, getAnalysis }) {
   }
 
   return {
-    requestDraw, zoomBy, home, fit, frameX, select, pointsFor, showPoint,
+    requestDraw, zoomBy, home, fit, frameX, frameBounds, select, pointsFor, showPoint,
     onViewChange: (fn) => listeners.add(fn),
     isCoarse: () => coarse.matches,
   };

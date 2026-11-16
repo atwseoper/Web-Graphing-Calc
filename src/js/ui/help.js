@@ -57,8 +57,26 @@ function graphPage() {
 
 function dataPage() {
   return [
-    section('Coming next',
-      p('Loading data from a CSV file or pasting it from a spreadsheet, then fitting a curve to it: straight lines, polynomials, exponential, power and your own models, with error estimates. This is Phase 3.'),
+    section('Getting data in',
+      ul(
+        [b('Open a file'), ': a CSV or text file from your phone, Google Drive or Downloads. On a computer you can also drag a file onto the page.'],
+        [b('Paste data'), ': copy cells in Google Sheets or Excel and paste them, or paste CSV text. On a computer, Ctrl+V anywhere on the Data tab works too.'],
+        [b('Type it in'), ': start an empty table.'],
+      ),
+      p('The preview shows how the data was read. Values can be separated by commas, semicolons, tabs or spaces, and decimals can use a point (1.5) or a comma (1,5): both are worked out for you, and you can change them if the guess is wrong. Pick the columns for x, y and, optionally, σy (the uncertainty of each y value).'),
+      p('Cells that aren\'t numbers are listed in the preview and left blank, so you can fix them in the table afterwards.'),
+    ),
+    section('The table',
+      ul(
+        'Type 1.5 or 1,5 – both work. You can also type a calculation such as π/4 or 2^10.',
+        ['Untick a point to ', b('leave it out'), ' of fits. It stays on the graph as a ring.'],
+        ['The ', b('σy error column'), ' button adds or hides uncertainties, drawn as error bars.'],
+        ['The ', b('1.5 / 1,5'), ' switch chooses how the table shows decimals.'],
+        'Enter moves down a row, adding a new one at the end.',
+      ),
+    ),
+    section('Data sets',
+      p('Each import makes a new data set with its own colour. Tap a set\'s name at the top to switch to it. The coloured dot shows or hides it on the graph; the bin deletes it (tap twice). Data sets show on the graph in every tab, and you can tap a point on the graph to read its value.'),
     ),
   ];
 }

@@ -25,6 +25,34 @@ export function defaultSolve() {
   };
 }
 
+export function defaultData() {
+  return { sets: [], nextId: 1, active: null };
+}
+
+// Fit models (D27). 'poly' uses degree; 'custom' uses the model text.
+export const FIT_MODELS = ['line', 'poly', 'exp', 'power', 'log', 'logistic', 'sin', 'gauss', 'custom'];
+
+export function newFit(id, color, model = 'line', extra = {}) {
+  return {
+    id, model, color, hidden: false,
+    degree: 2, custom: '', start: {},
+    weighted: true, // use σy when the data set has it
+    bands: 'none', // 'none' | 'conf' | 'both'
+    residuals: false,
+    ...extra,
+  };
+}
+
+// Every colour in use: expression rows, data sets and their fits.
+export function usedColors(state) {
+  const out = state.rows.map((r) => ({ color: r.color }));
+  for (const set of (state.data && state.data.sets) || []) {
+    out.push({ color: set.color });
+    for (const f of set.fits) out.push({ color: f.color });
+  }
+  return out;
+}
+
 // The least-used palette colour, in palette order.
 export function nextColor(rows) {
   const counts = new Map(PALETTE.map((c) => [c, 0]));
@@ -43,6 +71,7 @@ export function defaultState() {
     settings: { angle: 'rad', grid: 'cartesian', keypad: 'auto' },
     calc: { history: [] },
     solve: defaultSolve(),
+    data: defaultData(),
     ui: { tab: 'graph' },
   };
 }

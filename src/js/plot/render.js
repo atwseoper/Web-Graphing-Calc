@@ -132,3 +132,52 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
+
+// Data points as filled dots (or hollow rings for points left out of fits).
+// xs, ys: screen coordinates.
+export function drawScatter(ctx, xs, ys, color, { radius = 4, hollow = false, alpha = 1 } = {}) {
+  if (!xs.length) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  for (let i = 0; i < xs.length; i++) {
+    const x = clamp(xs[i]);
+    const y = clamp(ys[i]);
+    ctx.moveTo(x + radius, y);
+    ctx.arc(x, y, radius, 0, 2 * Math.PI);
+  }
+  if (hollow) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Vertical error bars with small caps: xs, lows, highs in screen coordinates.
+export function drawErrorBars(ctx, xs, lows, highs, color, { cap = 3, alpha = 0.7 } = {}) {
+  if (!xs.length) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  for (let i = 0; i < xs.length; i++) {
+    const x = clamp(xs[i]);
+    const lo = clamp(lows[i]);
+    const hi = clamp(highs[i]);
+    ctx.moveTo(x, lo);
+    ctx.lineTo(x, hi);
+    if (Math.abs(lo - hi) > 2 * cap) {
+      ctx.moveTo(x - cap, lo);
+      ctx.lineTo(x + cap, lo);
+      ctx.moveTo(x - cap, hi);
+      ctx.lineTo(x + cap, hi);
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}

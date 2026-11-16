@@ -20,5 +20,8 @@ export const ICONS = {
   warning: svg('<path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.01"/>'),
   analyse: svg('<path d="M3 20c3-1 5-7 8-11s6-5 10-5"/><path d="M4 13l16-6" stroke-dasharray="2 3"/><circle cx="11" cy="9.6" r="1.6" fill="currentColor"/>'),
   play: svg('<path d="M7 5l12 7-12 7z"/>'),
+  file: svg('<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h6"/>'),
+  paste: svg('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6M9 18h3"/>'),
+  download: svg('<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
   trash: svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
 };
