@@ -181,3 +181,31 @@ export function drawErrorBars(ctx, xs, lows, highs, color, { cap = 3, alpha = 0.
   ctx.stroke();
   ctx.restore();
 }
+
+// A shaded band between two curves sampled at the same screen xs (gaps where lo or hi
+// isn't finite).
+export function fillBand(ctx, xs, lo, hi, color, alpha = 0.15) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  let start = -1;
+  const close = (end) => {
+    if (end - start < 1) return;
+    ctx.moveTo(clamp(xs[start]), clamp(hi[start]));
+    for (let i = start + 1; i <= end; i++) ctx.lineTo(clamp(xs[i]), clamp(hi[i]));
+    for (let i = end; i >= start; i--) ctx.lineTo(clamp(xs[i]), clamp(lo[i]));
+    ctx.closePath();
+  };
+  for (let i = 0; i < xs.length; i++) {
+    const ok = Number.isFinite(lo[i]) && Number.isFinite(hi[i]);
+    if (ok && start < 0) start = i;
+    if (!ok && start >= 0) {
+      close(i - 1);
+      start = -1;
+    }
+  }
+  if (start >= 0) close(xs.length - 1);
+  ctx.fill();
+  ctx.restore();
+}

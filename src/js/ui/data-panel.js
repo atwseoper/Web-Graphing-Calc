@@ -7,9 +7,10 @@ import {
 } from '../data/csv.js';
 import { parseNumber, formatCell } from '../data/number.js';
 import {
-  newDataSet, blankPoint, summary, dataBounds, nameFromFile, MAX_SETS,
+  newDataSet, blankPoint, summary, dataBounds, nameFromFile, toCsv, MAX_SETS,
 } from '../data/table.js';
 import { nextColor, usedColors } from '../state/defaults.js';
+import { downloadText, copyText, flashLabel, fileNameFor } from './export.js';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const PAGE_ROWS = 100;
@@ -197,9 +198,21 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
       return decBtns[v];
     }));
   const tableStatus = h('p', { class: 'expr-status is-error cell-error', hidden: true, 'aria-live': 'polite' });
+  // Export: a CSV file, or tab-separated cells for pasting into a spreadsheet.
+  const downloadBtn = h('button', { type: 'button', class: 'text-btn', onClick: () => {
+    const set = latest && activeSet(latest);
+    if (set) downloadText(fileNameFor(set.name), `\ufeff${toCsv(set)}`);
+  } }, 'Download CSV');
+  const copyBtn = h('button', { type: 'button', class: 'text-btn' }, 'Copy table');
+  copyBtn.addEventListener('click', async () => {
+    const set = latest && activeSet(latest);
+    if (!set) return;
+    flashLabel(copyBtn, (await copyText(toCsv(set, { sep: '\t' }))) ? 'Copied' : 'Copy failed');
+  });
   const tableFoot = h('div', { class: 'table-foot' }, addPointBtn, moreBtn, h('span', { class: 'bar-spacer' }), sigmaBtn, decimalSeg);
+  const exportRow = h('div', { class: 'table-foot export-row' }, h('span', { class: 'an-label' }, 'Export:'), downloadBtn, copyBtn);
   const tableBox = h('section', { class: 'data-table-box', 'aria-label': 'Data table' },
-    h('div', { class: 'table-scroll' }, table), tableStatus, tableFoot);
+    h('div', { class: 'table-scroll' }, table), tableStatus, tableFoot, exportRow);
   const setBox = h('section', { class: 'set-box' }, setHead, metaLine, fitPanel ? fitPanel.el : '', tableBox);
 
   const wrap = h('div', { class: 'data' }, setBar, startBox, importBox, setBox);

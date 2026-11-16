@@ -72,6 +72,8 @@ export function modelSource(fit, analysis) {
     return { error: errorOf(e, fit.custom.length - text.length) };
   }
   if (ast.type === 'tuple') return { error: { message: 'Enter one expression in x, e.g. a·e^(−b x) + c', start: -1, end: -1 } };
+  // A parameter letter followed by brackets multiplies: a(1 − e^(−b x)) = a·(1 − e^(−b x)).
+  ast = bracketsMultiply(ast, analysis);
   // Parameters: the letters that aren't defined in the Graph tab (D27), in order.
   let names;
   try {
@@ -93,6 +95,32 @@ export function modelSource(fit, analysis) {
   }
   if (params.length > MAX_PARAMS) return { error: { message: `At most ${MAX_PARAMS} parameters`, start: -1, end: -1 } };
   return { text, params, formula: `y = ${text.trim()}`, hints: {}, ast };
+}
+
+// In a model, name(arg) where name is a single letter (optionally subscripted) that
+// isn't a defined function is a parameter times a bracket. Powers and factorials bind
+// to the bracket only, as they would after any other letter: a(x + 1)^2 = a·(x + 1)².
+function bracketsMultiply(node, analysis) {
+  if (!node || typeof node !== 'object') return node;
+  if (Array.isArray(node)) return node.map((v) => bracketsMultiply(v, analysis));
+  const isParamCall = (n) => n && n.type === 'apply' && !n.primes && n.args.length === 1
+    && /^[A-Za-z](_\w+)?$/.test(n.name) && !analysis.isDefined(n.name);
+  const product = (call, inner) => ({
+    type: 'bin', op: '*', start: call.start, end: inner.end ?? call.end,
+    left: { type: 'sym', name: call.name, start: call.start, end: call.start + call.name.length },
+    right: inner,
+  });
+  const bracket = (call) => ({ ...bracketsMultiply(call.args[0], analysis), parens: true });
+  if (node.type === 'bin' && node.op === '^' && isParamCall(node.left)) {
+    return product(node.left, { ...node, left: bracket(node.left), right: bracketsMultiply(node.right, analysis) });
+  }
+  if (node.type === 'fact' && isParamCall(node.arg)) {
+    return product(node.arg, { ...node, arg: bracket(node.arg) });
+  }
+  if (isParamCall(node)) return product(node, bracket(node));
+  const out = {};
+  for (const [k, v] of Object.entries(node)) out[k] = typeof v === 'object' ? bracketsMultiply(v, analysis) : v;
+  return out;
 }
 
 // "y = a x + b", "y ~ …", "f(x) = …" -> the right-hand side.

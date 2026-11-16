@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: Phase 2 complete – graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area) and the Solve tab (equations, polynomials, linear systems). Next: Phase 3, data import and regression. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: Phase 3 complete – graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area), the Solve tab (equations, polynomials, linear systems) and the Data tab (CSV import, curve fitting with error estimates). Next: Phase 4, polish and extras. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -12,10 +12,12 @@ Status: Phase 2 complete – graphing (Cartesian, x = g(y), polar, parametric, p
 - Variables, functions and sliders; piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π
 - Graph analysis: tap a curve to see its roots, extrema, intercepts and intersections; derivative, tangent, integrals with error estimates, polar area
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems
+- Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
+- Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
 
 ## Planned
 
-- Data import (CSV file or paste) and regression: linear, polynomial and custom models, with full non-linear least squares, parameter standard errors, confidence bands and residuals
+- Undo, sharing by link, PNG export and the optional extras listed in the design document
 
 ## Development
 

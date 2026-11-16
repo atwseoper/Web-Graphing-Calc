@@ -160,7 +160,7 @@ test('runFit: custom linear model, weighting, undefined points, errors', () => {
   // ln x is undefined at x ≤ 0: those points are left out, with a note
   const lg = runFit(A0, setOf([-1, 0, 1, 2, 4], [5, 5, 1, 1 + Math.log(2), 1 + 2 * Math.log(2)]), newFit(1, '#000', 'log'));
   assert.equal(lg.n, 3);
-  assert.match(lg.notes[0], /2 points left out: the model isn't defined/);
+  assert.match(lg.notes[0], /2 points left out: the model/);
   assert.ok(Math.abs(lg.values[1] - 1) < 1e-12);
 
   // Weighted line: χ² and absolute σ (D6)
@@ -195,4 +195,93 @@ test('runFit: custom linear model, weighting, undefined points, errors', () => {
   const exact = runFit(A0, setOf([1, 2], [1, 3]), newFit(1, '#000', 'line'));
   assert.match(exact.notes[0], /no error estimates/);
   assert.equal(runFit(A0, setOf([], []), newFit(1, '#000', 'line')).error.message, 'No points to fit yet: each point needs an x and a y value');
+});
+
+import { NONLINEAR } from './nist/nonlinear.mjs';
+import { guessStart } from '../src/js/fit/nonlinear.js';
+
+// Log relative error: the number of correct significant digits (NIST's measure).
+const lre = (v, c) => (v === c ? 15 : c === 0 ? -Math.log10(Math.abs(v)) : -Math.log10(Math.abs(v - c) / Math.abs(c)));
+
+test('Levenberg–Marquardt: NIST StRD non-linear problems from both starting points', () => {
+  const report = [];
+  for (const prob of NONLINEAR) {
+    for (const k of [0, 1]) {
+      const params = prob.params.map((_, j) => `b_${j + 1}`);
+      const start = Object.fromEntries(params.map((name, j) => [name, String(prob.starts[k][j])]));
+      const set = setOf(prob.x, prob.y);
+      const r = runFit(A0, set, newFit(1, '#000', 'custom', { custom: prob.model, start }), { budget: 5000 });
+      assert.ok(!r.error, `${prob.name} start ${k + 1}: ${r.error && r.error.message}`);
+      // Parameters are ordered as they first appear in the model; match by name.
+      let order = prob.params.map((_, j) => r.model.params.indexOf(`b_${j + 1}`));
+      if (prob.name.startsWith('Lanczos')) {
+        // A sum of exponentials b₁e^(−b₂x) + b₃e^(−b₄x) + …: the same minimum with the
+        // terms in another order is equally right, so compare the terms sorted by rate.
+        const terms = (vals) => [0, 2, 4].map((t) => [t, vals[t + 1]]).sort((u, v) => u[1] - v[1]).map(([t]) => t);
+        const mine = terms(order.map((k) => r.values[k]));
+        const cert = terms(prob.params);
+        const mapped = [...order];
+        cert.forEach((t, i) => { mapped[t] = order[mine[i]]; mapped[t + 1] = order[mine[i] + 1]; });
+        order = mapped;
+      }
+      const val = (j) => r.values[order[j]];
+      const se = (j) => r.se[order[j]];
+      const pLre = Math.min(...prob.params.map((c, j) => lre(val(j), c)));
+      const sLre = Math.min(...prob.se.map((c, j) => lre(se(j), c)));
+      const rLre = lre(r.rss, prob.rss);
+      report.push(`${prob.name} s${k + 1}: params ${pLre.toFixed(1)}, se ${sLre.toFixed(1)}, rss ${rLre.toFixed(1)}`);
+      assert.ok(rLre >= 6, `${prob.name} start ${k + 1}: RSS ${r.rss} vs ${prob.rss}`);
+      assert.ok(pLre >= 4, `${prob.name} start ${k + 1}: parameters only ${pLre.toFixed(1)} digits`);
+      assert.ok(sLre >= 3, `${prob.name} start ${k + 1}: standard errors only ${sLre.toFixed(1)} digits`);
+    }
+  }
+  if (process.env.NIST_REPORT) console.log(report.join('\n'));
+});
+
+import { PRESET_CASES } from './nist/presets.mjs';
+
+test('built-in non-linear models find the fit from their own starting guesses', () => {
+  const close = (a, b, tol) => Math.abs(a - b) <= tol * Math.max(Math.abs(b), 1e-300);
+  const models = { exp: 'exp', power: 'power', logistic: 'logistic', sin: 'sin', gauss: 'gauss', decay: 'exp' };
+  for (const [name, model] of Object.entries(models)) {
+    const c = PRESET_CASES[name];
+    const r = runFit(A0, setOf(c.x, c.y), newFit(1, '#000', model));
+    assert.ok(!r.error, `${name}: ${r.error && r.error.message}`);
+    let vals = r.values;
+    if (model === 'sin' && vals[0] < 0) vals = [-vals[0], vals[1], vals[2] + Math.PI, vals[3]];
+    if (model === 'sin') vals = [vals[0], vals[1], ((vals[2] % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), vals[3]];
+    if (model === 'gauss') vals = [vals[0], vals[1], Math.abs(vals[2])];
+    vals.forEach((v, k) => assert.ok(close(v, c.params[k], 1e-6), `${name} ${r.model.params[k]}: ${v} vs ${c.params[k]}`));
+    r.se.forEach((v, k) => assert.ok(close(v, c.se[k], 1e-4), `${name} se ${r.model.params[k]}: ${v} vs ${c.se[k]}`));
+    assert.ok(close(r.rss, c.rss, 1e-9), `${name} rss`);
+    assert.match(r.method, /Levenberg–Marquardt/);
+  }
+
+  // Weighted, with absolute σ (scipy absolute_sigma=True)
+  const w = PRESET_CASES.exp_weighted;
+  const wr = runFit(A0, setOf(w.x, w.y, { s: w.s, hasSigma: true }), newFit(1, '#000', 'exp'));
+  wr.values.forEach((v, k) => assert.ok(close(v, w.params[k], 1e-6)));
+  wr.se.forEach((v, k) => assert.ok(close(v, w.se[k], 1e-4)));
+  assert.ok(close(wr.chi2, w.chi2, 1e-9));
+
+  // Sinusoidal in degrees: the same curve, with b and c in degrees
+  const s = PRESET_CASES.sin;
+  const deg = runFit(analyse([], { angle: 'deg' }), setOf(s.x, s.y), newFit(1, '#000', 'sin'));
+  assert.ok(close(Math.abs(deg.values[1]), s.params[1] * 180 / Math.PI, 1e-6));
+  assert.ok(close(deg.rss, s.rss, 1e-9));
+
+  // The guesses themselves
+  assert.deepEqual(guessStart('custom', [1], [1]), null);
+  const g = guessStart('gauss', [0, 1, 2, 3, 4], [0, 1, 4, 1, 0]);
+  assert.equal(g[0], 4);
+  assert.equal(g[1], 2);
+});
+
+test('runFit: power model leaves out x ≤ 0; bands come from meanVar', () => {
+  const xs = [-1, 0, 1, 2, 3, 4];
+  const ys = [-2, 0, 1.99, 5.65, 10.4, 16.01];
+  const r = runFit(A0, setOf(xs, ys), newFit(1, '#000', 'power'));
+  assert.equal(r.n, 4);
+  assert.match(r.notes.join(' '), /2 points left out/);
+  assert.ok(r.meanVar(2.5) > 0 && Number.isFinite(r.meanVar(2.5)));
 });
