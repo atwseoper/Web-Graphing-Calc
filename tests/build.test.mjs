@@ -12,9 +12,10 @@ test('build produces a single self-contained HTML file', () => {
   assert.doesNotMatch(html, /\b(?:import|export)\s*\{/, 'module syntax must be bundled away');
   assert.doesNotMatch(html, /__BUILD_INFO__/);
   assert.match(html, /^Required Notice: Copyright/m, 'licence notice must be present');
-  // No runtime network references other than the licence/repo links.
+  // No runtime network references other than the licence/repo links and the app's own
+  // Pages address (used as the base of share links made from a downloaded copy).
   const urls = html.match(/https?:\/\/[^\s"'<>)]+/g) || [];
   for (const url of urls) {
-    assert.match(url, /^https:\/\/(github\.com\/atwseoper|polyformproject\.org)(\/|$)/, `unexpected URL ${url}`);
+    assert.match(url, /^https:\/\/(github\.com\/atwseoper|polyformproject\.org|atwseoper\.github\.io\/Web-Graphing-Calc)(\/|$)/, `unexpected URL ${url}`);
   }
 });

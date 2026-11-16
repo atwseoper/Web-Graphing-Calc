@@ -94,7 +94,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   };
   const pasteArea = h('textarea', {
     class: 'paste-area', rows: 5, spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off',
-    'aria-label': 'Data to import', placeholder: 'Paste here: cells from a spreadsheet, or lines like 1.5, 2.25',
+    'data-native-undo': '', 'aria-label': 'Data to import', placeholder: 'Paste here: cells from a spreadsheet, or lines like 1.5, 2.25',
   });
   pasteArea.addEventListener('input', () => {
     if (!imp) return;
@@ -112,7 +112,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   const sSel = sel('Column for σy', (v) => { imp.cols.s = Number(v); renderImport(); });
   const previewTable = h('table', { class: 'data-preview' });
   const problemsBox = h('div', { class: 'import-problems', 'aria-live': 'polite' });
-  const nameInput = h('input', { class: 'data-name-input', type: 'text', 'aria-label': 'Name of the data set', maxlength: 60 });
+  const nameInput = h('input', { class: 'data-name-input', type: 'text', 'data-native-undo': '', 'aria-label': 'Name of the data set', maxlength: 60 });
   nameInput.addEventListener('input', () => { if (imp) imp.name = nameInput.value; });
   const importBtn = h('button', { type: 'button', class: 'primary-btn', onClick: () => finishImport() }, 'Import');
   const importCancel = h('button', { type: 'button', class: 'text-btn', onClick: () => cancelImport() }, 'Cancel');

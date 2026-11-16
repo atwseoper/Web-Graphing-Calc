@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: Phase 3 complete – graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area), the Solve tab (equations, polynomials, linear systems) and the Data tab (CSV import, curve fitting with error estimates). Next: Phase 4, polish and extras. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: Phase 4 (polish and extras) in progress. Done so far: undo/redo, share links, project files, PNG export and Add to Home screen, on top of graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area), the Solve tab (equations, polynomials, linear systems) and the Data tab (CSV import, curve fitting with error estimates). See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -14,10 +14,13 @@ Status: Phase 3 complete – graphing (Cartesian, x = g(y), polar, parametric, p
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems
 - Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
 - Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
+- Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded; save and open project files; save the graph as a PNG with a key; add it to your phone's home screen
 
 ## Planned
 
-- Undo, sharing by link, PNG export and the optional extras listed in the design document
+- Animated polar θ sweep, slider play button, pretty-printed input
+- Shaded inequalities, implicit curves f(x, y) = 0, slope fields with ODE solution curves
+- Non-linear systems in the Solve tab
 
 ## Development
 

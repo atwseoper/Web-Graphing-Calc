@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v0.6 – Phase 3 (data and fitting) complete · **Updated:** 16 November 2026
+**Status:** v0.7 – Phase 4 (polish and extras) in progress · **Updated:** 16 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -40,6 +40,11 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D30 | Weighted fits treat σy as absolute errors: Cov = (JᵀWJ)⁻¹ and 95% intervals use the normal quantile. The card reports χ², χ²/dof and P(χ²) and says when χ² disagrees with σy. Prediction bands are drawn for unweighted fits only. | 16 Nov 2026 |
 | D31 | In a custom model, a parameter letter followed by brackets multiplies: `a(1 − e^(−b x))` = a·(1 − e^(−b x)), and `a(x + 1)^2` = a·(x + 1)². (In Graph rows an undefined letter before brackets is still an unknown function.) | 16 Nov 2026 |
 | D32 | Custom models are fitted after a short pause in typing, and non-linear fits have a time budget (about 0.4 s) spread over several starts; a fit that stops early says so and offers starting values. | 16 Nov 2026 |
+| D33 | Phase 4 takes all the optional extras: shaded inequalities, implicit curves, slope fields with ODE solution curves, a slider play button with a step setting, Add to Home screen, pretty-printed input and non-linear systems, plus undo, sharing, PNG export and the θ sweep. It is delivered as four pull requests (4a polish; 4b motion and display; 4c new graph types; 4d non-linear systems). | 16 Nov 2026 |
+| D34 | Undo covers rows, data sets and fits, Solve inputs, and the angle and grid settings, but not pan/zoom, the open tab, the keypad setting or the Calc history. Rapid edits to one field (typing, dragging a slider) merge into one step; a pause of 1 s or moving to another field starts a new one. Buttons at the top left of the graph; Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y. The Calc line and the paste box keep the browser's own undo. | 16 Nov 2026 |
+| D35 | A share link carries the whole project (rows, view, angle and grid, Solve inputs, data sets and fits) as deflate-compressed JSON in the URL fragment (`#g=…`), so nothing is uploaded. Links over 8,000 characters are refused with a pointer to the project file. Opening a link or a project file replaces the current work as one undoable step and keeps the user's keypad setting and Calc history. | 16 Nov 2026 |
+| D36 | “Save image” renders the current view at 2× (or the screen's pixel ratio, up to 4096 px) with a key underneath listing the visible graphs, data sets and fits (with their rounded equations) in their colours. On phones it opens the share sheet. | 16 Nov 2026 |
+| D37 | Add to Home screen: the web app manifest and icons are generated on the page as data: URLs when it is served over http(s), so the file stays self-contained. There is no service worker, so the installed app needs a connection to start unless the browser has it cached. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -84,7 +89,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | x = g(y) curves | P2 | Easy | |
 | Points / scatter plots | P2 | Easy | Shared with regression |
 | Derivative overlay; shaded integral area | P2 | Easy | |
-| Export PNG (share sheet where available) | P2 | Easy | |
+| Export PNG (share sheet where available) | P2 | Easy | Done in Phase 4 (D36) |
 | Inequalities with shading | P3 | Moderate | |
 | Implicit curves f(x, y) = 0 | P3 | Moderate | Marching squares |
 | Slope fields / ODE curves | P3 | Easy–Moderate | RK4 |
@@ -147,10 +152,10 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | Live parse errors | P1 | Easy | |
 | Light/dark theme (follows system) | P1 | Easy | Done in Phase 0 |
 | Auto-save to localStorage | P1 | Easy | |
-| Undo/redo | P2 | Easy | |
-| Share via URL fragment; import/export JSON project | P2 | Easy | Large data sets go in JSON only |
-| Help panel with function reference | P2 | Easy | |
-| Add to Home screen (web app manifest) | P3 | Easy | Possible now that the app is hosted on Pages; the manifest can be inlined as a data URL |
+| Undo/redo | P2 | Easy | Done in Phase 4 (D34) |
+| Share via URL fragment; import/export JSON project | P2 | Easy | Done in Phase 4 (D35) |
+| Help panel with function reference | P2 | Easy | Done (D22) |
+| Add to Home screen (web app manifest) | P3 | Easy | Done in Phase 4 (D37) |
 
 ## 4. Layout and visual design
 
@@ -258,5 +263,5 @@ build/
 
 ## 9. Open questions
 1. ~~CSV files with decimal commas~~ – supported (D25).
-2. Which P3 extras (inequalities, implicit curves, slope fields, non-linear systems, home-screen install) to keep?
-3. Slider animation (play button) and a step setting: worth adding in Phase 4?
+2. ~~Which P3 extras to keep~~ – all of them (D33).
+3. ~~Slider animation (play button) and a step setting~~ – yes, in Phase 4 (D33).

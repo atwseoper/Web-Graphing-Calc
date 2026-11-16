@@ -315,7 +315,7 @@ export function createFitPanel({ store, getAnalysis, fitCache, onSendToGraph }) 
 
 // The fitted equation with each value rounded to the precision its error justifies.
 // ("Add to graph" uses the full-precision equation.)
-function displayEquation(r) {
+export function displayEquation(r) {
   try {
     const rounded = r.values.map((v, k) => Number(v.toPrecision(estimateDigits(v, r.se[k]))));
     return equationText(r.model, rounded);

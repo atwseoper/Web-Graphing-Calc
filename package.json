@@ -1,6 +1,6 @@
 {
   "name": "web-graphing-calc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Self-contained single-file 2D graphing calculator web app",
   "type": "module",
