@@ -31,7 +31,7 @@ export function localeDecimal() {
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : many}`;
 
-export function createDataPanel({ root, store, getAnalysis, onFrame, fitsSlot }) {
+export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel }) {
   let imp = null; // import in progress
   let choosing = false; // the "add data" chooser is open
   let confirmDelete = 0; // set id waiting for a second tap on delete
@@ -200,7 +200,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitsSlot })
   const tableFoot = h('div', { class: 'table-foot' }, addPointBtn, moreBtn, h('span', { class: 'bar-spacer' }), sigmaBtn, decimalSeg);
   const tableBox = h('section', { class: 'data-table-box', 'aria-label': 'Data table' },
     h('div', { class: 'table-scroll' }, table), tableStatus, tableFoot);
-  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, fitsSlot || '', tableBox);
+  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, fitPanel ? fitPanel.el : '', tableBox);
 
   const wrap = h('div', { class: 'data' }, setBar, startBox, importBox, setBox);
   root.replaceChildren(wrap);
@@ -308,7 +308,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitsSlot })
     const n = t.columns.length;
     if (fresh || imp.cols.y >= n || imp.cols.x >= n || imp.cols.s >= n || imp.cols.y < 0) {
       imp.cols = defaultColumns(t);
-      if (!imp.name && t.header && imp.cols.y >= 0 && imp.source === 'paste') imp.name = t.columns[imp.cols.y];
+      if (!imp.name && t.header && imp.cols.y >= 0 && imp.source === 'paste' && t.columns[imp.cols.y].length > 1) imp.name = t.columns[imp.cols.y];
     }
     rerender();
   }
@@ -599,6 +599,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitsSlot })
 
     sigmaBtn.setAttribute('aria-pressed', String(set.hasSigma));
     for (const [v, b] of Object.entries(decBtns)) b.setAttribute('aria-checked', String(set.decimal === v));
+    if (fitPanel) fitPanel.render(state, set);
     renderTable(set);
   }
 

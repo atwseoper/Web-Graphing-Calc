@@ -1,0 +1,50 @@
+// Remembers fit results until their inputs change. Pure module – no DOM access.
+//
+// A fit is run again only when its settings, its data set's points or σy setting, or
+// (for custom models, which may use Graph-tab definitions) the analysis change. Built-in
+// models depend only on the angle unit (sinusoidal fits).
+import { analyse } from '../expr/model.js';
+import { runFit } from './run.js';
+
+export function createFitCache(run = runFit) {
+  const cache = new Map(); // fit id -> { key, points, analysis, result }
+  const plain = new Map(); // angle -> analysis with no definitions
+
+  function analysisFor(fit, analysis) {
+    if (fit.model === 'custom') return analysis;
+    const angle = analysis.angle === 'deg' ? 'deg' : 'rad';
+    if (!plain.has(angle)) plain.set(angle, analyse([], { angle }));
+    return plain.get(angle);
+  }
+
+  function result(set, fit, analysis) {
+    const an = analysisFor(fit, analysis);
+    const key = JSON.stringify([fit.model, fit.degree, fit.custom, fit.weighted, fit.start, set.hasSigma]);
+    const c = cache.get(fit.id);
+    if (c && c.key === key && c.points === set.points && c.analysis === an) return c.result;
+    let r;
+    try {
+      r = run(an, set, fit);
+    } catch (e) {
+      r = { error: { message: `The fit failed: ${e && e.message ? e.message : e}`, start: -1, end: -1 } };
+    }
+    cache.set(fit.id, { key, points: set.points, analysis: an, result: r });
+    return r;
+  }
+
+  // Every fit of every set: [{ set, fit, result }]. Drops results of deleted fits.
+  function all(state, analysis) {
+    const out = [];
+    const live = new Set();
+    for (const set of state.data.sets) {
+      for (const fit of set.fits) {
+        live.add(fit.id);
+        out.push({ set, fit, result: result(set, fit, analysis) });
+      }
+    }
+    for (const id of [...cache.keys()]) if (!live.has(id)) cache.delete(id);
+    return out;
+  }
+
+  return { result, all };
+}

@@ -9,6 +9,8 @@ import { createSheet } from './ui/sheet.js';
 import { createCalcPanel } from './ui/calc-panel.js';
 import { createSolvePanel } from './ui/solve-panel.js';
 import { createDataPanel } from './ui/data-panel.js';
+import { createFitPanel } from './ui/fit-panel.js';
+import { createFitCache } from './fit/cache.js';
 import { createHelp } from './ui/help.js';
 import { symbolShortcut } from './expr/shortcuts.js';
 import { newRow, nextColor } from './state/defaults.js';
@@ -29,6 +31,10 @@ const storage = (() => {
 const store = createStore(storage ? load(storage) : load({ getItem: () => null }));
 let analysis = analyse(store.get().rows, store.get().settings);
 const getAnalysis = () => analysis;
+const fitCache = createFitCache();
+// Fits drawn on the graph: those of visible data sets, with a result.
+const getFits = () => fitCache.all(store.get(), analysis)
+  .filter(({ set, fit, result }) => !set.hidden && !fit.hidden && result && result.f);
 
 const persist = debounce(() => storage && save(storage, store.get()), 400);
 window.addEventListener('pagehide', () => persist.flush());
@@ -40,7 +46,7 @@ document.addEventListener('visibilitychange', () => {
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICONS[el.dataset.icon];
 
 // ---- components ----------------------------------------------------------------------------
-const graph = createGraphView({ canvas: $('graph-canvas'), store, getAnalysis });
+const graph = createGraphView({ canvas: $('graph-canvas'), store, getAnalysis, getFits });
 $('btn-zoom-in').addEventListener('click', () => graph.zoomBy(1.5));
 $('btn-zoom-out').addEventListener('click', () => graph.zoomBy(1 / 1.5));
 $('btn-home').addEventListener('click', () => graph.home());
@@ -81,8 +87,11 @@ createHelp({ backdrop: $('help'), openBtn: $('btn-help'), getTab: () => store.ge
 
 const solvePanel = createSolvePanel({ root: $('tab-solve'), store, getAnalysis, onShowOnGraph: showOnGraph });
 
+const fitPanel = createFitPanel({
+  store, getAnalysis, fitCache, onSendToGraph: (equation) => showOnGraph({ graph: [equation] }),
+});
 const dataPanel = createDataPanel({
-  root: $('tab-data'), store, getAnalysis, onFrame: (bounds) => graph.frameBounds(bounds),
+  root: $('tab-data'), store, getAnalysis, fitPanel, onFrame: (bounds) => graph.frameBounds(bounds),
 });
 
 const calc = createCalcPanel({
