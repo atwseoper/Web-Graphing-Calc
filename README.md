@@ -4,11 +4,12 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: Phase 4 (polish and extras) in progress. Done so far: undo/redo, share links, project files, PNG export, Add to Home screen, slider animation, the polar θ sweep and pretty-printed input, on top of graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area), the Solve tab (equations, polynomials, linear systems) and the Data tab (CSV import, curve fitting with error estimates). See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: Phase 4 (polish and extras) in progress. Done so far: undo/redo, share links, project files, PNG export, Add to Home screen, slider animation, the polar θ sweep, pretty-printed input, inequalities, implicit curves and slope fields, on top of graphing (Cartesian, x = g(y), polar, parametric, points, variables, functions, sliders, conditions, Σ/Π), graph analysis (roots, extrema, intersections, derivatives, tangents, integrals, polar area), the Solve tab (equations, polynomials, linear systems) and the Data tab (CSV import, curve fitting with error estimates). See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
 - Multiple y = f(x), x = g(y), parametric and polar graphs with pan, pinch-zoom and trace; animated θ/t sweep
+- Implicit curves (x² + y² = 9), shaded inequalities (y < x², 0 < y < x), slope fields with solution curves (y′ = x − y)
 - Expressions shown as written maths (fractions, powers, roots, Σ) under each row
 - Variables, functions and sliders (with a play button and step); piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π
 - Graph analysis: tap a curve to see its roots, extrema, intercepts and intersections; derivative, tangent, integrals with error estimates, polar area
@@ -19,7 +20,6 @@ Status: Phase 4 (polish and extras) in progress. Done so far: undo/redo, share l
 
 ## Planned
 
-- Shaded inequalities, implicit curves f(x, y) = 0, slope fields with ODE solution curves
 - Non-linear systems in the Solve tab
 
 ## Development

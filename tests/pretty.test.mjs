@@ -65,3 +65,11 @@ test('layout boxes have the documented shapes', () => {
   assert.equal(frac.t, 'frac');
   assert.equal(frac.d.t, 'sqrt');
 });
+
+test('graph-only forms: inequalities, dy/dx and y′', () => {
+  const g = (src) => plainText(prettyLayout(parse(src, { graph: true })));
+  assert.equal(g('y >= x^2'), 'y ≥ x²');
+  assert.equal(g('0 < y <= x/2'), '0 < y ≤ x/2');
+  assert.equal(g('dy/dx = x - y'), 'dy/dx = x − y');
+  assert.equal(g("y' = x y"), 'y′ = xy');
+});

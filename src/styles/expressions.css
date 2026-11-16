@@ -306,3 +306,16 @@
   gap: 6px;
 }
 .poi-chip { font-family: var(--mono); font-size: 0.8rem; padding: 0 10px; }
+
+/* Solution curves of a slope field */
+.expr-ode {
+  display: grid;
+  gap: 6px;
+  margin: -2px 4px 10px;
+}
+.expr-ode[hidden] { display: none; }
+.ode-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.ode-list:empty { display: none; }
+.ode-chip { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.chip-x { opacity: 0.6; font-size: 1.05em; }
+.expr-ode .chip[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }

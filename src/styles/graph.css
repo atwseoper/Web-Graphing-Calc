@@ -191,3 +191,6 @@
 .toast-close { font-size: 1.2rem; opacity: 0.7; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -8px); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+/* Waiting for a tap to place a solution curve */
+#graph-canvas.is-placing { cursor: crosshair; }

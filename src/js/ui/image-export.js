@@ -8,7 +8,7 @@ import { prettyLayout, plainText } from '../expr/pretty.js';
 // x^2 -> x², sqrt(x) -> √x … (the typed text if it doesn't parse).
 function nice(text) {
   try {
-    return plainText(prettyLayout(parse(text)));
+    return plainText(prettyLayout(parse(text, { graph: true })));
   } catch {
     return text;
   }

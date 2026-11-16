@@ -48,6 +48,9 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D38 | Pretty-printed input: under a Graph row, the parsed expression is drawn as maths (stacked fractions, powers, radicals, |x|, log bases, Σ/Π with limits, subscripts) whenever that shows something the typed text doesn't, so the user can check how it was read (`1/2x` = ½·x). Fractions inside exponents stay on one line. A setting hides it. The same layout gives one-line Unicode text (x², √x, a₁) for the key of exported images. | 16 Nov 2026 |
 | D39 | Slider play button and step: ▷ moves a slider back and forth across its range (one crossing takes 4 s), snapping to the step. The step field (empty = automatic, about 1/200 of the range) also applies to dragging. Playing stops when the slider is dragged, the row stops being a slider, or the page is hidden. A whole play counts as one undo step. | 16 Nov 2026 |
 | D40 | θ sweep: ▷ beside a polar (or parametric) row's range draws the curve as θ (or t) runs from the start of the range to the end over 4 s. The rest of the curve shows faintly; the current point is labelled with its θ or t, and for polar curves the radius from the origin is drawn. | 16 Nov 2026 |
+| D41 | Implicit curves: any equation in x and y that isn't solved for one of them (`x^2 + y^2 = 9`, `y = x + sin(y)`, `sin(x) = cos(y)`) plots F(x, y) = left − right = 0 by marching squares on a 4 px grid (8 px while panning), with bisection on each crossing, the cell centre for saddles, and poles rejected when |F| at a segment's midpoint exceeds every corner. Implicit curves can be traced (snapped to the curve by Newton steps) but have no points of interest. | 16 Nov 2026 |
+| D42 | Inequalities are whole Graph rows: `y < x^2`, `x >= sin(y)`, `x^2 + y^2 <= 4`, chains like `0 < y < x`. A lone y or x against an expression in the other variable is shaded exactly to the edge of the graph; anything else is tested on the grid, with each comparison's edge drawn only where the other comparisons hold. < and > edges are dashed, ≤ and ≥ solid. Comparisons are still only allowed in braces anywhere else, and inequalities can't be used in Calc or Solve. | 16 Nov 2026 |
+| D43 | Slope fields: `y' = f(x, y)` or `dy/dx = f(x, y)` draws short marks on a 30 px grid fixed to the plane. “+ Solution curve” then a tap on the graph adds a starting point (up to 12 per row, kept in the row and removable as chips); each solution is integrated by RK4 both ways across the visible x range, stopping when it leaves the view by more than its height. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -93,9 +96,9 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | Points / scatter plots | P2 | Easy | Shared with regression |
 | Derivative overlay; shaded integral area | P2 | Easy | |
 | Export PNG (share sheet where available) | P2 | Easy | Done in Phase 4 (D36) |
-| Inequalities with shading | P3 | Moderate | |
-| Implicit curves f(x, y) = 0 | P3 | Moderate | Marching squares |
-| Slope fields / ODE curves | P3 | Easy–Moderate | RK4 |
+| Inequalities with shading | P3 | Moderate | Done (D42) |
+| Implicit curves f(x, y) = 0 | P3 | Moderate | Done (D41): marching squares |
+| Slope fields / ODE curves | P3 | Easy–Moderate | Done (D43): RK4 |
 
 ### 3.3 Polar mode
 | Feature | Pri | Difficulty |
@@ -247,6 +250,9 @@ build/
 | `r = f(θ)` | Polar graph; type `theta` or use the θ key |
 | `(f(t), g(t))` | Parametric curve |
 | `(a, b)` | Point |
+| `x^2 + y^2 = 9` | Implicit curve: any equation in x and y not solved for one of them (D41) |
+| `y < x^2`, `x^2 + y^2 <= 4`, `0 < y < x` | Shaded region; dashed edge for < and >, solid for ≤ and ≥ (D42) |
+| `y' = x - y`, `dy/dx = x - y` | Slope field, with solution curves through tapped points (D43) |
 | `a = 3`, `b = 2a` | Variables, usable in every row and in the Calc tab |
 | `f(x) = x^2` | Function; plotted when its parameter is x. Multi-parameter functions such as `g(u, v) = …` also work |
 | `3 + 4`, `f(2)` | Evaluated in place: `= 7` |

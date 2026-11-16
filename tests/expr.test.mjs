@@ -210,8 +210,9 @@ test('rows: domains for polar and parametric', () => {
 test('rows: errors are specific', () => {
   assert.match(err('y = q x'), /'q' is not defined/);
   assert.match(err('r = sin(x)'), /Use θ/);
-  assert.match(err('y = x + y'), /y on both sides/);
-  assert.match(err('x^2 + y^2 = 1'), /isn't supported yet/);
+  assert.match(err('2 = 3'), /isn't supported/);
+  assert.match(err('x^2 + θ = 1'), /r alone/);
+  assert.match(err('x y + t = 1'), /use x and y, not t/);
   assert.match(err('(1, 2, 3)'), /exactly two/);
   assert.match(err('sin(1, 2)'), /takes 1 argument/);
   assert.match(err('x + y'), /write y = /);

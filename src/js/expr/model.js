@@ -14,10 +14,17 @@
 //   'polar'       r = f(θ): { f, domain: { min, max } }
 //   'parametric'  (x(t), y(t)): { fx, fy, domain: { min, max } }
 //   'point'       (a, b): { x, y }
+//   'implicit'    an equation in x and y not solved for either, x^2 + y^2 = 4:
+//                 { F(x, y) } with the curve where F = 0 (F = left − right)
+//   'inequality'  y < f(x), x ≥ g(y), or any chain of comparisons in x and y:
+//                 { form: 'y'|'x', f, above, strict } shades above/below y = f(x)
+//                 (form 'x': right/left of x = f(y)); or { form: 'general',
+//                 test(x, y) -> boolean, edges: [{ F(x, y), strict }] }
+//   'slope'       dy/dx = f(x, y) or y' = f(x, y): { f(x, y) }, a slope field
 // Polar and parametric rows may also carry domainError: { which: 'min'|'max', message }.
 // Rows with an f of x also have derivative(): { f, text } | null, computed on first use.
 import { ExprError } from './errors.js';
-import { parse, parseExpression } from './parser.js';
+import { parse, parseExpression, isDyDx } from './parser.js';
 import { tokenize } from './tokenizer.js';
 import { compile, referencedNames } from './compile.js';
 import { derive } from './derive.js';
@@ -51,6 +58,20 @@ function unary(fn) {
     return fn(frame);
   };
 }
+
+// The same for a closure of (x, y).
+function binary(fn) {
+  const frame = [0, 0];
+  return (x, y) => {
+    frame[0] = x;
+    frame[1] = y;
+    return fn(frame);
+  };
+}
+
+const STRICT = new Set(['<', '>']);
+const FLIP = { '<': '>', '>': '<', '<=': '>=', '>=': '<=' };
+const holds = (op, a, b) => (op === '<' ? a < b : op === '>' ? a > b : op === '<=' ? a <= b : a >= b);
 
 function hasNumericDerivative(node) {
   if (!node || typeof node !== 'object') return false;
@@ -107,7 +128,7 @@ export function analyse(rows, settings = {}) {
     const text = (row.text || '').trim();
     if (!text) return { empty: true };
     try {
-      return { ast: parse(row.text) };
+      return { ast: parse(row.text, { graph: true }) };
     } catch (e) {
       return { error: errorOf(e) };
     }
@@ -363,7 +384,10 @@ export function analyse(rows, settings = {}) {
     const local = new Set();
     if (ast.type === 'eq') {
       if (ast.lhs.type === 'apply') ast.lhs.args.forEach((a) => a.type === 'sym' && local.add(a.name));
-      node = { type: 'tuple', items: ast.lhs.type === 'sym' || ast.lhs.type === 'apply' ? [ast.rhs] : [ast.lhs, ast.rhs] };
+      if (ast.lhs.type === 'yprime' || isDyDx(ast.lhs)) node = ast.rhs;
+      else node = { type: 'tuple', items: ast.lhs.type === 'sym' || ast.lhs.type === 'apply' ? [ast.rhs] : [ast.lhs, ast.rhs] };
+    } else if (ast.type === 'ineq') {
+      node = { type: 'tuple', items: ast.items };
     } else {
       node = ast.expr;
     }
@@ -379,7 +403,80 @@ export function analyse(rows, settings = {}) {
     return { fn, uses: ctx.used.has(slotName) };
   }
 
+  // Compile an expression in x and y: (x, y) => number.
+  function compileXY(node, what) {
+    const ctx = makeCtx({
+      slots: { x: 0, y: 1 },
+      unknown(n, where) {
+        if (n === 'r' || n === 'θ' || n === 't') throw new ExprError(`${what} use x and y, not ${n}`, where.start, where.end);
+      },
+    });
+    return binary(compile(node, ctx));
+  }
+
+  function mentions(node, v) {
+    return referencedNames(node).names.has(v);
+  }
+  function mentionsXY(node) {
+    return mentions(node, 'x') || mentions(node, 'y');
+  }
+
+  function classifyInequality(ast) {
+    const { ops, items } = ast;
+    if (!items.some(mentionsXY)) {
+      throw new ExprError('An inequality to graph needs x or y in it, e.g. y < x^2', ast.start, ast.end);
+    }
+    // y < f(x) and x ≥ g(y): shade exactly between the curve and the edge of the graph.
+    if (items.length === 2) {
+      for (const v of ['y', 'x']) {
+        const isV = (n) => n.type === 'sym' && n.name === v && !n.parens;
+        let side = null;
+        let op = ops[0];
+        if (isV(items[0]) && !mentions(items[1], v)) side = items[1];
+        else if (isV(items[1]) && !mentions(items[0], v)) {
+          side = items[0];
+          op = FLIP[op];
+        }
+        if (!side) continue;
+        const other = v === 'y' ? 'x' : 'y';
+        const { fn } = compileWith(side, other, (n, where) => {
+          if (n === 'r' || n === 'θ' || n === 't') throw new ExprError(`Inequalities use x and y, not ${n}`, where.start, where.end);
+        });
+        return { kind: 'inequality', form: v, f: unary(fn), above: op === '>' || op === '>=', strict: STRICT.has(op) };
+      }
+    }
+    // Anything else: test every comparison at each point of a grid.
+    const fs = items.map((n) => compileXY(n, 'Inequalities'));
+    const edges = [];
+    for (let k = 0; k < ops.length; k++) {
+      const a = fs[k];
+      const b = fs[k + 1];
+      edges.push({ F: (x, y) => a(x, y) - b(x, y), strict: STRICT.has(ops[k]) });
+    }
+    // Every comparison holds, except (optionally) number `skip`.
+    const testExcept = (skip, x, y) => {
+      let prev = fs[0](x, y);
+      for (let k = 0; k < ops.length; k++) {
+        const next = fs[k + 1](x, y);
+        if (k !== skip && !holds(ops[k], prev, next)) return false;
+        prev = next;
+      }
+      return true;
+    };
+    const test = (x, y) => testExcept(-1, x, y);
+    return { kind: 'inequality', form: 'general', test, testExcept, edges };
+  }
+
+  function implicitOf(lhs, rhs) {
+    const F = compileXY({ type: 'bin', op: '-', left: lhs, right: rhs, start: lhs.start, end: rhs.end }, 'Equations like this');
+    return { kind: 'implicit', F };
+  }
+
   function classify(ast, row) {
+    if (ast.type === 'ineq') return classifyInequality(ast);
+    if (ast.type === 'eq' && (ast.lhs.type === 'yprime' || isDyDx(ast.lhs))) {
+      return { kind: 'slope', f: compileXY(ast.rhs, 'Slope fields') };
+    }
     if (ast.type === 'eq') {
       let { lhs, rhs } = ast;
       // Allow "expr = y" as well as "y = expr".
@@ -387,6 +484,9 @@ export function analyse(rows, settings = {}) {
         [lhs, rhs] = [rhs, lhs];
       }
       if (lhs.type === 'sym' && !lhs.parens) {
+        if ((lhs.name === 'y' && mentions(rhs, 'y')) || (lhs.name === 'x' && mentions(rhs, 'x'))) {
+          return implicitOf(lhs, rhs);
+        }
         if (lhs.name === 'y') {
           const { fn } = compileWith(rhs, 'x', bothSides('y'));
           return { kind: 'cartesian', f: unary(fn), derivative: lazyDerivative(rhs) };
@@ -409,7 +509,13 @@ export function analyse(rows, settings = {}) {
       if (lhs.type === 'apply' && lhs.primes) {
         throw new ExprError(`${lhs.name}${"'".repeat(lhs.primes)} is worked out from ${lhs.name} – define ${lhs.name}(x) instead`, lhs.start, lhs.end);
       }
-      throw new ExprError("This kind of equation isn't supported yet. Try y = …, x = …, r = … or a(x) = …", lhs.start, rhs.end);
+      if (mentionsXY(lhs) || mentionsXY(rhs)) {
+        if (mentions(lhs, 'r') || mentions(rhs, 'r') || mentions(lhs, 'θ') || mentions(rhs, 'θ')) {
+          throw new ExprError('Polar equations need r alone on one side: r = …', lhs.start, rhs.end);
+        }
+        return implicitOf(lhs, rhs);
+      }
+      throw new ExprError("This kind of equation isn't supported. Try y = …, x = …, r = …, x^2 + y^2 = 4 or a(x) = …", lhs.start, rhs.end);
     }
 
     const expr = ast.expr;

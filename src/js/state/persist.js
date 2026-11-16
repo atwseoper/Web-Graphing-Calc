@@ -1,7 +1,7 @@
 // Saving and restoring state. serialize/deserialize are pure; load/save take a
 // Storage-like object (localStorage in the browser) so they can be tested.
 import {
-  defaultState, defaultSolve, defaultData, newRow, newFit, FIT_MODELS, PALETTE, STATE_VERSION,
+  defaultState, defaultSolve, defaultData, newRow, newFit, FIT_MODELS, PALETTE, STATE_VERSION, MAX_ODE_POINTS,
 } from './defaults.js';
 import { newDataSet, MAX_SETS } from '../data/table.js';
 import { MAX_POINTS } from '../data/csv.js';
@@ -73,6 +73,12 @@ export function deserialize(json) {
       row.atX = str(r.atX);
       row.intFrom = str(r.intFrom);
       row.intTo = str(r.intTo);
+      if (Array.isArray(r.odePoints)) {
+        row.odePoints = r.odePoints
+          .filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null)
+          .slice(0, MAX_ODE_POINTS)
+          .map((p) => [p[0], p[1]]);
+      }
       rows.push(row);
     }
   }
