@@ -879,6 +879,20 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
       if (row.hidden || !isPlottable(r)) return;
+      if (r.kind === 'inequality' || r.kind === 'slope') return; // they fill the plane
+      if (r.kind === 'implicit') {
+        // What can be seen of it now (an implicit curve has no natural range).
+        only1D = false;
+        round = true;
+        for (const l of contour(r.F, vp, { cell: 6 })) {
+          for (let k = 0; k < l.x.length; k++) {
+            const [wx, wy] = toWorld(vp, l.x[k], l.y[k]);
+            xs.push(wx);
+            ys.push(wy);
+          }
+        }
+        return;
+      }
       if (r.kind === 'cartesian' || r.kind === 'function') {
         for (let k = 0; k <= N; k++) {
           const y = r.f(xMin + ((xMax - xMin) * k) / N);
