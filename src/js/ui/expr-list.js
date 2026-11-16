@@ -1,7 +1,7 @@
 // The list of expression rows in the Graph tab.
 import { h, setText, setHidden } from './dom.js';
 import { ICONS } from './icons.js';
-import { newRow, nextColor } from '../state/defaults.js';
+import { newRow, nextColor, MAX_ODE_POINTS } from '../state/defaults.js';
 import { formatNumber } from '../expr/format.js';
 import { defaultDomain } from '../expr/model.js';
 import { niceStep } from '../plot/viewport.js';
@@ -222,6 +222,33 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       domError,
     );
 
+    // Solution curves of a slope field (D43): starting points, added by tapping the graph.
+    const odeList = h('div', { class: 'ode-list' });
+    odeList.addEventListener('click', (ev) => {
+      const b = ev.target.closest('button[data-k]');
+      if (!b) return;
+      const r = rowById(id);
+      if (r) updateRow(id, { odePoints: r.odePoints.filter((_, k) => k !== Number(b.dataset.k)) });
+    });
+    const odeAdd = h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': 'false',
+      onClick: () => {
+        if (!graph) return;
+        if (armedRow === id) {
+          graph.armTap(null);
+          return;
+        }
+        armedRow = id;
+        graph.armTap((x, y) => {
+          const r = rowById(id);
+          if (!r) return;
+          updateRow(id, { odePoints: [...r.odePoints, [roundForScreen(x, 'x'), roundForScreen(y, 'y')]].slice(-MAX_ODE_POINTS) });
+        });
+      },
+    }, '+ Solution curve');
+    const odeHint = h('span', { class: 'an-label', hidden: true }, 'Tap the graph where it should start');
+    const ode = h('div', { class: 'expr-ode', hidden: true }, odeList, h('div', { class: 'an-row' }, odeAdd, odeHint));
+
     const tStart = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Table start', placeholder: '0' });
     const tStep = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Table step', placeholder: '1' });
     tStart.addEventListener('input', () => updateRow(id, { tableStart: tStart.value }));
@@ -253,7 +280,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
 
     const li = h('li', { class: 'expr-row', dataset: { id: String(id) } },
       h('div', { class: 'row-left' }, swatch, num),
-      h('div', { class: 'expr-main' }, input, pretty, status, missing, slider, domain, table),
+      h('div', { class: 'expr-main' }, input, pretty, status, missing, slider, domain, ode, table),
       h('div', { class: 'row-actions' }, analysisBtn, tableBtn, delBtn),
       analysisPanel,
     );
@@ -261,7 +288,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       li, input, swatch, num, status, domain, domMinInput, domMaxInput, domVar1, domError,
       table, tStart, tStep, tHeadA, tHeadB, tBody, tableErr, tableBtn,
       missing, missingKey: '', slider, range, sMin, sMax, sStep, playBtn, sliderName: null, pretty, prettyKey: null,
-      sweepBtn,
+      sweepBtn, ode, odeList, odeAdd, odeHint, odeKey: '',
       analysisBtn, analysisPanel, derivRow, derivText, derivBtn, atRow, atInput, atOut,
       intRow, intLabel, intVar, intFrom, intTo, intOut, poiBlock, poiHead, poiList, poiKey: '',
     };
@@ -360,6 +387,10 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       if (de) setText(e.domError, de.message);
     }
 
+    // Solution curves for slope fields.
+    setHidden(e.ode, r.kind !== 'slope');
+    if (r.kind === 'slope') renderOde(e, row);
+
     // Table of values.
     const tableable = r.kind === 'cartesian' || r.kind === 'cartesian-x' || (r.kind === 'function' && !!r.f);
     setHidden(e.tableBtn, !tableable);
@@ -389,7 +420,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       let box = null;
       if (key) {
         try {
-          box = prettyLayout(parse(src));
+          box = prettyLayout(parse(src, { graph: true }));
         } catch {
           box = null;
         }
@@ -398,6 +429,30 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       else e.pretty.replaceChildren();
     }
     setHidden(e.pretty, !e.pretty.firstChild);
+  }
+
+  function renderOde(e, row) {
+    const key = JSON.stringify(row.odePoints);
+    if (key !== e.odeKey) {
+      e.odeKey = key;
+      e.odeList.replaceChildren(...row.odePoints.map(([x, y], k) => h('button', {
+        type: 'button', class: 'chip ode-chip', dataset: { k: String(k) }, 'aria-label': `Remove the solution curve through (${fmt(x, 6)}, ${fmt(y, 6)})`,
+      }, `(${fmt(x, 6)}, ${fmt(y, 6)})`, h('span', { class: 'chip-x', 'aria-hidden': 'true' }, '×'))));
+    }
+    const armed = armedRow === row.id && !!graph && graph.isArmed();
+    e.odeAdd.setAttribute('aria-pressed', String(armed));
+    setText(e.odeAdd, armed ? 'Cancel' : '+ Solution curve');
+    setHidden(e.odeHint, !armed);
+    e.odeAdd.disabled = !armed && row.odePoints.length >= MAX_ODE_POINTS;
+  }
+
+  // A tapped coordinate, rounded to about a pixel.
+  function roundForScreen(v, axis) {
+    const vp = graph && graph.viewport ? graph.viewport() : null;
+    const scale = vp ? (axis === 'x' ? vp.scaleX : vp.scaleY) : 40;
+    const step = niceStep(2 / scale);
+    const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
+    return Number((Math.round(v / step) * step).toFixed(Math.min(decimals, 12)));
   }
 
   function renderSweepBtn(e, id, kind) {
@@ -413,6 +468,13 @@ export function createExprList({ listEl, addBtn, store, graph }) {
 
   // ---- slider play button (D39) -------------------------------------------------------------
   const players = new Map(); // row id -> { raf, pos, dir, last }
+  let armedRow = null; // row waiting for a tap on the graph (solution curves)
+  if (graph) {
+    graph.onArmChange((on) => {
+      if (!on) armedRow = null;
+      refresh();
+    });
+  }
 
   function stopPlaying(id) {
     const p = players.get(id);

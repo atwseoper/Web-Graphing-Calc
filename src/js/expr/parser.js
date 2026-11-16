@@ -18,7 +18,9 @@
 //   { type: 'series', op: 'sum'|'prod', body, index, from, to }
 //                                              sum(k^2, k, 1, 10)
 //
-// parse() returns { type: 'eq', lhs, rhs } or { type: 'expr', expr }.
+// parse() returns { type: 'eq', lhs, rhs } or { type: 'expr', expr }; with
+// { graph: true } also { type: 'ineq', ops, items } for y < x^2 (chains allowed:
+// 0 < y < 1), and y' (alone on the left of '=') parses as { type: 'yprime' }.
 //
 // Precedence (low -> high): + -  <  * / and implicit multiplication  <  unary -  <  ^  <  !
 // so -x^2 = -(x^2), 2^-1 = 0.5, 1/2x = (1/2)x, 2x^2 = 2(x^2).
@@ -40,12 +42,29 @@ const COMPARISONS = new Set(['<', '>', '<=', '>=']);
 const STOPPERS = new Set([')', ',', '=', '}', ':']);
 const isCallable = (name) => isFunctionName(name) || SERIES.has(name);
 
-export function parse(src) {
+export function parse(src, { graph = false } = {}) {
   const p = new Parser(tokenize(src));
+  // Graph rows (graph: true) may also be inequalities, y < x^2 or x^2 + y^2 <= 4, and
+  // slope fields written y' = f(x, y).
+  p.graph = graph;
+  p.topCmp = graph;
   if (p.peek().type === 'eof') throw new ExprError('Empty expression', 0, 0);
   const lhs = p.expr(0);
   let result;
-  if (p.isOp('=')) {
+  if (graph && p.peek().type === 'op' && COMPARISONS.has(p.peek().value)) {
+    const ops = [];
+    const items = [lhs];
+    while (p.peek().type === 'op' && COMPARISONS.has(p.peek().value)) {
+      const opTok = p.next();
+      ops.push(opTok.value);
+      items.push(p.operand(0, opTok));
+    }
+    if (p.isOp('=')) {
+      const t = p.peek();
+      throw new ExprError("Use either '=' or an inequality (<, ≤, >, ≥), not both", t.start, t.end);
+    }
+    result = { type: 'ineq', ops, items, start: lhs.start, end: items[items.length - 1].end };
+  } else if (p.isOp('=')) {
     const eq = p.next();
     if (p.peek().type === 'eof') throw new ExprError("Expected an expression after '='", eq.start, eq.end);
     const rhs = p.expr(0);
@@ -53,12 +72,26 @@ export function parse(src) {
       const t = p.peek();
       throw new ExprError("Only one '=' is allowed", t.start, t.end);
     }
+    if (p.peek().type === 'op' && COMPARISONS.has(p.peek().value)) {
+      const t = p.peek();
+      throw new ExprError("Use either '=' or an inequality (<, ≤, >, ≥), not both", t.start, t.end);
+    }
     result = { type: 'eq', lhs, rhs };
   } else {
     result = { type: 'expr', expr: lhs };
   }
   p.expectEnd();
   return result;
+}
+
+// dy/dx as typed. Implicit multiplication binds like * and /, left to right (D11), so
+// "dy/dx" parses as ((d·y)/d)·x.
+export function isDyDx(node) {
+  const sym = (n, name) => n && n.type === 'sym' && n.name === name && !n.parens;
+  return node.type === 'bin' && node.op === '*' && node.implicit && !node.parens && sym(node.right, 'x')
+    && node.left.type === 'bin' && node.left.op === '/' && !node.left.parens && sym(node.left.right, 'd')
+    && node.left.left.type === 'bin' && node.left.left.op === '*' && node.left.left.implicit && !node.left.left.parens
+    && sym(node.left.left.left, 'd') && sym(node.left.left.right, 'y');
 }
 
 // Parse a single expression (no '=' allowed), e.g. for domain bounds.
@@ -73,6 +106,18 @@ class Parser {
     this.tokens = tokens;
     this.pos = 0;
     this.allowCmp = false; // true while parsing the operands of a condition
+    this.topCmp = false; // comparisons allowed at the top level (graph inequalities)
+    this.depth = 0; // nesting inside brackets, function calls and braces
+    this.graph = false;
+  }
+
+  nested(fn) {
+    this.depth++;
+    try {
+      return fn();
+    } finally {
+      this.depth--;
+    }
   }
 
   peek(offset = 0) {
@@ -137,8 +182,10 @@ class Parser {
           continue;
         }
         if (COMPARISONS.has(op)) {
-          if (this.allowCmp) return left;
-          throw new ExprError('Inequalities aren\'t supported yet. For a condition, use braces: {x > 0: x}', t.start, t.end);
+          if (this.allowCmp || (this.topCmp && this.depth === 0)) return left;
+          throw new ExprError(this.graph
+            ? 'A comparison can be a whole row (y < x^2) or a condition in braces ({x > 0: x}), not part of an expression'
+            : 'Inequalities can only be graphed (in the Graph tab). For a condition, use braces: {x > 0: x}', t.start, t.end);
         }
       }
       if (this.startsImplicitOperand(t) && BP.mul > minBp) {
@@ -172,21 +219,21 @@ class Parser {
         return { type: 'neg', arg, start: t.start, end: arg.end };
       }
       if (t.value === '+') return this.operand(BP.neg, t);
-      if (t.value === '(') return this.parenthesised(t);
-      if (t.value === '{') return this.piecewise(t);
+      if (t.value === '(') return this.nested(() => this.parenthesised(t));
+      if (t.value === '{') return this.nested(() => this.piecewise(t));
       if (t.value === ')') throw new ExprError("Unexpected ')'", t.start, t.end);
       if (t.value === "'") throw new ExprError("A ' (derivative) goes after a function name, e.g. f'(x)", t.start, t.end);
       throw new ExprError(`Unexpected '${t.value}'`, t.start, t.end);
     }
 
     if (t.type === 'name') {
-      if (SERIES.has(t.value)) return this.series(t);
+      if (SERIES.has(t.value)) return this.nested(() => this.series(t));
       if (isFunctionName(t.value)) {
         if (this.isOp("'")) {
           const q = this.peek();
           throw new ExprError(`Derivatives work on your own functions: define f(x) = ${t.value}(x), then use f'(x)`, t.start, q.end);
         }
-        return this.functionCall(t);
+        return this.nested(() => this.functionCall(t));
       }
       let primes = 0;
       let primeEnd = t.end;
@@ -196,11 +243,14 @@ class Parser {
       }
       if (this.isOp('(')) {
         const open = this.next();
-        const args = this.argList(open);
+        const args = this.nested(() => this.argList(open));
         const close = this.tokens[this.pos - 1];
         const node = { type: 'apply', name: t.value, args, nameStart: t.start, nameEnd: primeEnd, start: t.start, end: close.end };
         if (primes) node.primes = primes;
         return node;
+      }
+      if (primes === 1 && this.graph && t.value === 'y' && this.depth === 0 && this.pos === 2) {
+        return { type: 'yprime', start: t.start, end: primeEnd }; // y' = f(x, y): a slope field
       }
       if (primes) {
         throw new ExprError(`Write the derivative with brackets, e.g. ${t.value}${"'".repeat(primes)}(x)`, t.start, primeEnd);

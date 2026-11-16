@@ -118,7 +118,8 @@ test('syntax: conditions, restrictions, sum and prod', () => {
   assert.equal(fx('y = sum(x, x, 1, 3)', 99), 6);
 
   const err = (t) => analyse([{ text: t }]).rows[0].error.message;
-  assert.match(err('y = x < 1'), /Inequalities aren't supported yet/);
+  assert.match(err('y = x < 1'), /either '=' or an inequality/);
+  assert.match(err('y = sin(x < 1)'), /whole row/);
   assert.match(err('y = {x}'), /need a condition/);
   assert.match(err('y = {x < 0: 1, 2, x > 3: 4}'), /must come last/);
   assert.match(err('sum(k, k, 1)'), /4 arguments/);

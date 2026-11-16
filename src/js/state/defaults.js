@@ -5,6 +5,7 @@
 export const PALETTE = ['#2f6fed', '#e8590c', '#0f9d8a', '#c2255c', '#7048e8', '#5c940d', '#d6336c', '#1098ad'];
 
 export const STATE_VERSION = 1;
+export const MAX_ODE_POINTS = 12;
 
 export function newRow(id, color, text = '') {
   return {
@@ -13,6 +14,7 @@ export function newRow(id, color, text = '') {
     showTable: false, tableStart: '', tableStep: '',
     sliderMin: '', sliderMax: '', sliderStep: '',
     showAnalysis: false, showDeriv: false, atX: '', intFrom: '', intTo: '',
+    odePoints: [], // [[x, y], …]: starting points of solution curves (slope fields)
   };
 }
 

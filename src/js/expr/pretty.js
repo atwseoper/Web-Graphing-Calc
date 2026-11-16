@@ -13,6 +13,8 @@
 //   { t: 'paren', c, open, close } brackets that grow with their contents
 //   { t: 'bigop', op, lo, hi, c }  Σ / Π with limits below and above
 
+import { isDyDx } from './parser.js';
+
 const PREC = { cmp: 0, add: 1, mul: 2, neg: 3, pow: 4, atom: 5 };
 
 const FN_NAMES = {
@@ -105,6 +107,7 @@ function lay(node) {
         c: precOf(node.body) <= PREC.add ? paren(body) : body,
       };
     }
+    case 'yprime': return text('y′', 'var');
     case 'nderiv':
       return row({ t: 'frac', n: text('d', 'fn'), d: row(text('d', 'fn'), symbol(node.v)) }, paren(lay(node.expr)));
     default:
@@ -179,7 +182,12 @@ function layBin(node) {
 
 // Layout for a parse() result ({ type: 'eq' } or { type: 'expr' }).
 export function prettyLayout(parsed) {
-  if (parsed.type === 'eq') return row(lay(parsed.lhs), op('='), lay(parsed.rhs));
+  if (parsed.type === 'eq') {
+    const lhs = isDyDx(parsed.lhs)
+      ? { t: 'frac', n: text('dy', 'var'), d: text('dx', 'var') }
+      : lay(parsed.lhs);
+    return row(lhs, op('='), lay(parsed.rhs));
+  }
   if (parsed.type === 'expr') return lay(parsed.expr);
   if (parsed.type === 'ineq') {
     const out = [lay(parsed.items[0])];

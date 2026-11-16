@@ -17,8 +17,13 @@ import {
 import { dataBounds } from '../data/table.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
 import { pointsOfInterest } from '../numerics/analysis.js';
+import { contour, regionRects, snapToCurve } from '../plot/implicit.js';
+import { solutionThrough } from '../numerics/ode.js';
 
-const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function']);
+const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope']);
+const REGION_ALPHA = 0.16;
+const SLOPE_SPACING = 30; // px between slope-field marks
+const STRICT_DASH = [8, 6]; // edges of < and > regions are dashed, like on paper
 const TAP_SLOP = 8; // px of movement still counted as a tap
 const DOUBLE_TAP_MS = 320;
 const POI_NAMES = {
@@ -136,6 +141,7 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       case 'cartesian-x': return sampleCartesianX(r.f, vp);
       case 'parametric': return sampleParametric(r.fx, r.fy, r.domain.min, r.domain.max, vp);
       case 'polar': return samplePolar(r.f, r.domain.min, r.domain.max, vp, angleFactor);
+      case 'implicit': return memo(r.F, 'c', () => contour(r.F, vp, { cell: interacting ? 8 : 4 }));
       case 'point': {
         const [sx, sy] = toScreen(vp, r.x, r.y);
         return Number.isFinite(sx) && Number.isFinite(sy) ? [{ x: [sx], y: [sy], t: [0] }] : [];
@@ -168,8 +174,15 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     // Shaded integrals and polar areas go underneath the curves.
     for (const { row, r } of visible) if (row.showAnalysis) drawShading(row, r, analysis, angleFactor);
 
+    // Shaded inequalities and slope fields go under the curves too.
+    for (const { row, r } of visible) {
+      if (r.kind === 'inequality') drawInequality(row, r);
+      else if (r.kind === 'slope') drawSlopeField(row, r);
+    }
+
     curves = [];
     for (const { row, r } of visible) {
+      if (r.kind === 'inequality' || r.kind === 'slope') continue;
       const lines = sampleRow(r, angleFactor);
       curves.push({ rowId: row.id, kind: r.kind, color: row.color, lines, result: r });
       if (r.kind === 'point') {
@@ -192,6 +205,117 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     drawPointsOfInterest(visible);
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // Grid sampling is the slow part of drawing implicit curves and regions; redraws for
+  // the same view (tracing, sweeps, row focus) reuse the last result.
+  const memoCache = new WeakMap(); // function -> { vp, cell, kind, value }
+  function memo(fn, kind, compute) {
+    const cell = interacting ? 8 : 4;
+    const c = memoCache.get(fn);
+    if (c && c.vp === vp && c.cell === cell && c.kind === kind && renderScale === 0) return c.value;
+    const value = compute();
+    if (renderScale === 0) memoCache.set(fn, { vp, cell, kind, value });
+    return value;
+  }
+
+  // ---- inequalities, slope fields (D41–D43) ---------------------------------------------------
+  function drawInequality(row, r) {
+    const color = row.color;
+    const dash = r.strict ? STRICT_DASH : null;
+    if (r.form === 'y' || r.form === 'x') {
+      // Exact: fill between the boundary curve and the edge of the graph.
+      const lines = r.form === 'y' ? sampleCartesian(r.f, vp) : sampleCartesianX(r.f, vp);
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = REGION_ALPHA;
+      ctx.beginPath();
+      const LIM = 20000;
+      const cl = (v) => Math.max(-LIM, Math.min(LIM, v));
+      for (const { x, y } of lines) {
+        if (x.length < 2) continue;
+        if (r.form === 'y') {
+          const edge = r.above ? -10 : vp.height + 10;
+          ctx.moveTo(cl(x[0]), edge);
+          for (let i = 0; i < x.length; i++) ctx.lineTo(cl(x[i]), cl(y[i]));
+          ctx.lineTo(cl(x[x.length - 1]), edge);
+        } else {
+          const edge = r.above ? vp.width + 10 : -10;
+          ctx.moveTo(edge, cl(y[0]));
+          for (let i = 0; i < x.length; i++) ctx.lineTo(cl(x[i]), cl(y[i]));
+          ctx.lineTo(edge, cl(y[y.length - 1]));
+        }
+        ctx.closePath();
+      }
+      ctx.fill();
+      ctx.restore();
+      drawLines(ctx, lines, color, 2.5, { dash });
+      return;
+    }
+    // General: shade grid cells where the test holds, then draw each comparison's edge
+    // where the other comparisons hold.
+    const cell = interacting ? 8 : 4;
+    const rects = memo(r.test, 'r', () => regionRects(r.test, vp, { cell }));
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = REGION_ALPHA;
+    ctx.beginPath();
+    for (const [x, y, w, hgt] of rects) ctx.rect(x, y, w, hgt);
+    ctx.fill();
+    ctx.restore();
+    r.edges.forEach((edge, k) => {
+      const keep = r.edges.length > 1 ? (x, y) => r.testExcept(k, x, y) : null;
+      const lines = memo(edge.F, 'c', () => contour(edge.F, vp, { cell, keep }));
+      drawLines(ctx, lines, color, 2.5, { dash: edge.strict ? STRICT_DASH : null });
+    });
+  }
+
+  function drawSlopeField(row, r) {
+    const { xMin, xMax, yMin, yMax } = worldBounds(vp);
+    // Marks sit on a grid fixed to the plane, so they don't swim when panning.
+    const stepX = SLOPE_SPACING / vp.scaleX;
+    const stepY = SLOPE_SPACING / vp.scaleY;
+    const half = SLOPE_SPACING * 0.3;
+    ctx.save();
+    ctx.strokeStyle = row.color;
+    ctx.globalAlpha = 0.6;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let gx = Math.ceil(xMin / stepX) * stepX; gx <= xMax; gx += stepX) {
+      for (let gy = Math.ceil(yMin / stepY) * stepY; gy <= yMax; gy += stepY) {
+        const m = r.f(gx, gy);
+        if (!Number.isFinite(m)) continue;
+        const [sx, sy] = toScreen(vp, gx, gy);
+        const vx = vp.scaleX;
+        const vy = -m * vp.scaleY;
+        const len = Math.hypot(vx, vy);
+        const ux = (vx / len) * half;
+        const uy = (vy / len) * half;
+        ctx.moveTo(sx - ux, sy - uy);
+        ctx.lineTo(sx + ux, sy + uy);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Solution curves through the row's starting points.
+    const h = yMax - yMin;
+    for (const [x0, y0] of row.odePoints || []) {
+      const p = solutionThrough(r.f, x0, y0, xMin, xMax, {
+        steps: interacting ? 300 : 900, yMin: yMin - h, yMax: yMax + h, maxJump: 40 / vp.scaleY,
+      });
+      const xs = [];
+      const ys = [];
+      for (let i = 0; i < p.x.length; i++) {
+        const [sx, sy] = toScreen(vp, p.x[i], p.y[i]);
+        xs.push(sx);
+        ys.push(sy);
+      }
+      drawLines(ctx, [{ x: xs, y: ys }], row.color, 2.5);
+      const [sx, sy] = toScreen(vp, x0, y0);
+      drawPoi(ctx, sx, sy, row.color, colors, true);
+    }
   }
 
   // ---- θ / t sweep (D40) ------------------------------------------------------------------------
@@ -523,6 +647,8 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       }
       case 'point':
         return { x: r.x, y: r.y, label: fmt(r.x, r.y) };
+      case 'implicit':
+        return { x: tr.x, y: tr.y, label: fmt(tr.x, tr.y) };
       case 'scatter': {
         const p = r.set.points[tr.i];
         if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
@@ -571,6 +697,15 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       case 'point':
         trace = { rowId: curve.rowId, kind: 'point' };
         break;
+      case 'implicit': {
+        const hit = nearestOnLines(curve.lines, sx, sy);
+        if (!hit) break;
+        const [hx, hy] = toWorld(vp, hit.x, hit.y);
+        const snapped = snapToCurve(curve.result.F, hx, hy, 0.5 / Math.max(vp.scaleX, vp.scaleY));
+        const [tx, ty] = snapped && Math.hypot((snapped[0] - hx) * vp.scaleX, (snapped[1] - hy) * vp.scaleY) < 3 ? snapped : [hx, hy];
+        trace = { rowId: curve.rowId, kind: 'implicit', x: tx, y: ty };
+        break;
+      }
       case 'scatter': {
         const hit = nearestPoint(curve, sx, sy);
         if (hit) trace = { rowId: curve.rowId, kind: 'scatter', i: hit.i };
@@ -609,6 +744,10 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
       return;
     }
     if (pointers.size > 2) return;
+    if (armed) {
+      gesture = { type: 'pan', vp0: vp, start: p, time: e.timeStamp, moved: false };
+      return;
+    }
     const poi = hitPoi(p.x, p.y, e.pointerType);
     if (poi) {
       poiSel = poi;
@@ -676,6 +815,14 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     const g = gesture;
     gesture = null;
     if (e.type === 'pointercancel' || g.moved) return;
+
+    // Waiting for a tap to place something (a solution curve's starting point).
+    if (armed) {
+      const fn = armed;
+      armTap(null);
+      fn(...toWorld(vp, p.x, p.y));
+      return;
+    }
 
     // A tap. On empty space it clears the trace, the tapped point and the selection.
     if (g.type === 'pan' && !g.onPoi && (trace || poiSel || selectedId !== null)) {
@@ -876,6 +1023,15 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     requestDraw();
   }
 
+  // The next tap on the graph calls fn(x, y) instead of its usual job; null cancels.
+  let armed = null;
+  const armListeners = new Set();
+  function armTap(fn) {
+    armed = fn;
+    canvas.classList.toggle('is-placing', !!fn);
+    for (const l of armListeners) l(!!fn);
+  }
+
   // Show a saved view (an opened project); null = the home view.
   function useView(view) {
     if (!vp) return; // not sized yet: resize() reads the view from the store
@@ -906,7 +1062,10 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
   }
 
   return {
-    requestDraw, renderImage, useView, toggleSweep, zoomBy,
+    requestDraw, renderImage, useView, toggleSweep, armTap, zoomBy,
+    isArmed: () => !!armed,
+    viewport: () => vp,
+    onArmChange: (fn) => armListeners.add(fn),
     isSweeping: (rowId) => sweeps.has(rowId),
     onSweepChange: (fn) => sweepListeners.add(fn), home, fit, frameX, frameBounds, select, pointsFor, showPoint,
     onViewChange: (fn) => listeners.add(fn),
