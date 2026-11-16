@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v0.4 – Phase 1 (core graphing) complete · **Updated:** 15 November 2026
+**Status:** v0.5 – Phase 2 (analysis and solver) complete · **Updated:** 16 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -21,7 +21,14 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D11 | Implicit multiplication has the same precedence as `*` and `/`, evaluated left to right, so `1/2x` = (1/2)·x. | 15 Nov 2026 |
 | D12 | Errors in the row being typed are shown only after a short pause, so half-typed expressions don't flash warnings. Graphs update on every keystroke. | 15 Nov 2026 |
 | D13 | Polar θ and parametric t ranges default to 0…2π (0…360 in degree mode). Each row can set its own range. | 15 Nov 2026 |
-| D14 | Calc and Solve are full-page tabs (no graph). Graph and Data keep the graph visible, because Data's fitted curves need it. Solve will get a "Show on graph" action in Phase 2. | 15 Nov 2026 |
+| D14 | Calc and Solve are full-page tabs (no graph). Graph and Data keep the graph visible, because Data's fitted curves need it. Solve has a "Show on graph" action. | 15 Nov 2026 |
+| D15 | Conditions use braces: `{x < 0: -x, x}` (piecewise) and `x^2{0 < x < 2}` (restriction: undefined outside). Comparisons are only allowed inside braces; plain inequalities stay P3. | 16 Nov 2026 |
+| D16 | Derivatives are written `f'(x)`, `f''(x)` on user functions. `y = …` rows get their derivative from the analysis panel. Symbolic where possible; gamma, nCr, ! and similar fall back to a numeric derivative. | 16 Nov 2026 |
+| D17 | Σ and Π are `sum(expr, k, from, to)` and `prod(…)` (the TI-89 order). The counting letter is local to the sum. `sum` and `prod` are now reserved words. | 16 Nov 2026 |
+| D18 | Graph analysis has no menus: tapping a curve (or focusing its row) selects it and shows its roots, extrema, y-intercept and intersections as tappable dots, for the visible range only. A per-row analysis panel adds the derivative, value/gradient/tangent at x, a definite integral (shaded) and, for polar rows, the area ½∫r² dθ. | 16 Nov 2026 |
+| D19 | Sliders: any `a = number` row gets a slider (default range −10…10, widened to include the value; min and max editable). Undefined letters in a row are offered as "Add slider" chips. | 16 Nov 2026 |
+| D20 | The Solve tab has three modes: Equation (any one unknown, others given values, numeric search over a range that widens automatically from ±10 to ±10⁶), Polynomial (all roots including complex, with multiplicities) and System (linear, any size up to 12 unknowns, reporting no / infinitely many solutions). | 16 Nov 2026 |
+| D21 | Animated θ sweep for polar graphs moves to Phase 4 (polish), as it isn't needed for parity with a handheld. | 16 Nov 2026 |
 
 ## 1. Purpose
 
@@ -77,7 +84,8 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra.
 | r = f(θ) with θ range and step | P1 | Easy |
 | Polar grid with degree/π labels | P1 | Easy |
 | Polar trace (r, θ and x, y) | P1 | Easy |
-| Animated θ sweep; negative-r handling | P2 | Easy |
+| Negative-r handling | P2 | Easy |
+| Animated θ sweep (moved to Phase 4, D21) | P3 | Easy |
 | Polar area ½∫r² dθ | P2 | Easy |
 
 ### 3.4 Graph analysis
@@ -161,13 +169,13 @@ src/
   styles/               theme.css, layout.css, ...
   js/
     main.js             entry point
-    expr/               tokenizer, parser, ast, compile, derive, format
-    numerics/           roots, poly, integrate, minimise, linalg (LU, QR), stats (t, F quantiles)
+    expr/               tokenizer, parser, compile, model, derive, print, polynomial, solve, format
+    numerics/           special, roots, minimise, analysis, integrate, poly, linalg; later stats (t, F quantiles), QR
     data/               csv, table
     fit/                linear, nonlinear (LM), models, report
     plot/               viewport, grid, sample-cartesian, sample-polar, render, interact
     state/              store, persist, history
-    ui/                 sheet, expr-list, keypad, solver-panel, data-panel, fit-panel, calc-panel
+    ui/                 sheet, expr-list, graph-view, keypad, solve-panel, calc-panel, settings; later data-panel, fit-panel
 tests/                  node:test unit tests
 build/
   bundle.mjs            zero-dependency ES-module bundler (restricted syntax subset)
@@ -178,7 +186,14 @@ build/
 
 **Testing:** pure modules have no DOM access and are unit-tested in Node. The build test checks that the output really is self-contained. Regression code is validated against NIST StRD certified values.
 
-**Size estimate:** P1 ≈ 2,500–3,500 lines; P1 + P2 ≈ 7,000–9,000 lines. Built file roughly 200–300 KB unminified.
+**Size estimate:** P1 ≈ 2,500–3,500 lines; P1 + P2 ≈ 7,000–9,000 lines. Built file roughly 200–300 KB unminified (Phase 2: 268 KB).
+
+**Numerical methods (Phase 2):**
+- Roots: sample the range (400 points on the graph, 2,000 in Solve), refine each sign change with Brent's method and polish with Newton steps on the symbolic derivative. A sign change where |f| doesn't fall towards zero is a pole or a jump, not a root. Touching roots (x² at 0) are found as minima of |f| that reach zero. Close pairs the scan stepped over are split at the dip.
+- Extrema: strict extrema among the samples, refined as roots of f′ (or with Brent's minimiser), rejected if the refined value runs away from the samples (poles).
+- Integrals: adaptive Gauss–Kronrod 7/15 with |K15 − G7| error estimates; undefined values are located and reported, divergence is reported rather than returned as a number.
+- Polynomials: closed forms for degree ≤ 2 (cancellation-free quadratic), Aberth–Ehrlich otherwise, Newton polishing; repeated roots are grouped by an ε^(1/m) test and refined as simple roots of the (m−1)th derivative.
+- Linear systems: Gaussian elimination with partial pivoting to reduced row echelon form; rank, consistency and free unknowns reported; near-singular systems flagged.
 
 ## 6. Hard parts and risks
 - **Plot quality at asymptotes:** adaptive subdivision and jump detection.
@@ -194,9 +209,9 @@ build/
 |---|---|---|
 | 0 – Skeleton ✅ | Repo, build, tests, CI/Pages, responsive shell, theme, static grid | Deployed empty shell, checked on a phone |
 | 1 – Core graphing ✅ | Expression engine, Cartesian / parametric / polar plotting, pan/zoom, trace, table, keypad, calculator rows, auto-save | A usable graphing calculator |
-| 2 – Analysis & Solve | Roots, intersections, extrema, integrals, sliders, derivatives, solver tab | Parity with a handheld |
+| 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
 | 3 – Data & Fit | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
-| 4 – Polish & extras | Undo, sharing, help, PNG export, then optional P3 items | Release |
+| 4 – Polish & extras | Undo, sharing, help, PNG export, animated θ sweep, then optional P3 items | Release |
 
 ## 8. Expression syntax (as implemented)
 
@@ -210,6 +225,10 @@ build/
 | `a = 3`, `b = 2a` | Variables, usable in every row and in the Calc tab |
 | `f(x) = x^2` | Function; plotted when its parameter is x. Multi-parameter functions such as `g(u, v) = …` also work |
 | `3 + 4`, `f(2)` | Evaluated in place: `= 7` |
+| `f'(x)`, `f''(2)` | Derivatives of a user function (D16) |
+| `{x < 0: -x, x}` | Piecewise: the first true condition wins, the last item is "otherwise" |
+| `x^2{0 < x < 2}` | Restriction: undefined where the condition fails. Comparisons: `< > <= >= ≤ ≥`, chainable |
+| `sum(k^2, k, 1, n)`, `prod(k, k, 1, 5)` | Σ and Π (also typed as Σ, Π). Limits are rounded to whole numbers; at most 10⁶ terms |
 
 - Rows can be in any order. Duplicate and circular definitions are reported on every affected row.
 - Precedence: `+ −` < `× ÷` and implicit multiplication < unary minus < `^` (right-associative) < `!`. So `-x^2` = −(x²) and `2^3^2` = 2⁹.
@@ -217,8 +236,10 @@ build/
 - `x2` and `2 3` are errors (missing operator), not 2x or 23.
 - A negative base with a fractional exponent p/q (q odd) gives the real root: `(-8)^(1/3)` = −2, so `x^(1/3)` graphs for negative x.
 - `sin(π)` shows as 0, and degree mode gives exact values at standard angles (`sin(30)` = 0.5).
+- A run of undefined letters before brackets is reported as an unknown function: `set(x)` → "Unknown function 'set'". Defined letters still multiply: with a and b defined, `ab(4)` = a·b·4.
 - Built-in functions: sin cos tan sec csc cot asin acos atan (also arcsin…), sinh cosh tanh asinh acosh atanh, exp ln log (log(x, b) for base b), sqrt cbrt abs floor ceil round (round(x, n)), sign min max mod gamma nCr nPr, and postfix `!`. Constants: π (`pi`), e.
 
 ## 9. Open questions
 1. CSV files with decimal commas (common in European exports): support now, or only if needed?
 2. Which P3 extras (inequalities, implicit curves, slope fields, non-linear systems, home-screen install) to keep?
+3. Slider animation (play button) and a step setting: worth adding in Phase 4?

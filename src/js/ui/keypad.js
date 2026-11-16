@@ -26,8 +26,14 @@ const PAGES = {
   func: [
     ['sin', 'sin(|)'], ['cos', 'cos(|)'], ['tan', 'tan(|)'], ['ln', 'ln(|)'],
     ['sin⁻¹', 'asin(|)', { aria: 'inverse sine' }], ['cos⁻¹', 'acos(|)', { aria: 'inverse cosine' }], ['tan⁻¹', 'atan(|)', { aria: 'inverse tangent' }], ['log', 'log(|)'],
-    ['eˣ', 'exp(|)', { aria: 'e to the power' }], ['∛', 'cbrt(|)', { aria: 'cube root' }], ['mod', 'mod(|)'], ['n!', '!', { aria: 'factorial' }],
-    ['⌊x⌋', 'floor(|)', { aria: 'floor' }], ['⌈x⌉', 'ceil(|)', { aria: 'ceiling' }], ['min', 'min(|)'], ['max', 'max(|)'],
+    ['eˣ', 'exp(|)', { aria: 'e to the power' }], ['∛', 'cbrt(|)', { aria: 'cube root' }], ['Σ', 'sum(|, k, 1, 10)', { aria: 'sum' }], ['Π', 'prod(|, k, 1, 10)', { aria: 'product' }],
+    ['mod', 'mod(|)'], ['nCr', 'nCr(|)', { aria: 'combinations' }], ['min', 'min(|)'], ['max', 'max(|)'],
+  ],
+  cond: [
+    ['{', '{|}', { aria: 'open brace' }], ['}', '}', { action: 'close', aria: 'close brace' }], [':', ': ', { aria: 'colon, then' }], ['x', 'x', { cls: 'var' }],
+    ['<', ' < ', { aria: 'less than' }], ['>', ' > ', { aria: 'greater than' }], ['≤', ' ≤ ', { aria: 'less than or equal' }], ['≥', ' ≥ ', { aria: 'greater than or equal' }],
+    ["f′", "'", { aria: 'derivative, prime' }], ['⌊x⌋', 'floor(|)', { aria: 'floor' }], ['⌈x⌉', 'ceil(|)', { aria: 'ceiling' }], ['round', 'round(|)'],
+    ['sign', 'sign(|)'], ['Γ', 'gamma(|)', { aria: 'gamma' }], ['nPr', 'nPr(|)', { aria: 'permutations' }], ['sec', 'sec(|)'],
   ],
   abc: [
     ['a', 'a'], ['b', 'b'], ['c', 'c'], ['d', 'd'],
@@ -43,7 +49,7 @@ export function createKeypad({ el, getTarget, onSystemKeyboard, onHide }) {
   function key([label, insert, opt = {}]) {
     const b = h('button', {
       type: 'button',
-      class: `key ${opt.cls || ''}`,
+      class: `key ${opt.cls || ''}${!opt.icon && label.length >= 4 ? ' long' : ''}`,
       'aria-label': opt.aria || label,
       html: opt.icon ? ICONS[opt.icon] : undefined,
     }, opt.icon ? null : label);
@@ -57,7 +63,7 @@ export function createKeypad({ el, getTarget, onSystemKeyboard, onHide }) {
   const right = h('div', { class: 'keys keys-right' }, NUMBERS.map(key));
   const tabs = {};
   const bar = h('div', { class: 'keypad-bar' },
-    ...[['main', 'xʸ'], ['func', 'f(x)'], ['abc', 'abc']].map(([name, label]) => {
+    ...[['main', 'xʸ'], ['func', 'f(x)'], ['cond', '{}'], ['abc', 'abc']].map(([name, label]) => {
       tabs[name] = h('button', { type: 'button', class: 'key bar-key', dataset: { page: name }, 'aria-pressed': 'false' }, label);
       return tabs[name];
     }),
@@ -130,7 +136,7 @@ export function createKeypad({ el, getTarget, onSystemKeyboard, onHide }) {
           target.setRangeText('', s, e, 'end');
         } else if (s > 0) {
           // Delete an empty bracket pair together: "sin(|)" -> "sin|"
-          const pair = v[s - 1] === '(' && v[s] === ')';
+          const pair = (v[s - 1] === '(' && v[s] === ')') || (v[s - 1] === '{' && v[s] === '}');
           target.setRangeText('', s - 1, pair ? s + 1 : s, 'end');
         } else {
           return;
@@ -146,14 +152,16 @@ export function createKeypad({ el, getTarget, onSystemKeyboard, onHide }) {
       case 'enter':
         target.dispatchEvent(new CustomEvent('keypad-enter'));
         return;
-      case 'close':
-        // Step over an existing ')' instead of adding another.
-        if (s === e && v[s] === ')') {
+      case 'close': {
+        // Step over an existing ')' or '}' instead of adding another.
+        const ch = btn.dataset.insert;
+        if (s === e && v[s] === ch) {
           target.setSelectionRange(s + 1, s + 1);
           return;
         }
-        insertText(target, ')');
+        insertText(target, ch);
         return;
+      }
       default:
         insertText(target, btn.dataset.insert);
     }

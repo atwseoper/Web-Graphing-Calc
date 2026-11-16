@@ -17,5 +17,7 @@ export const ICONS = {
   hideKeypad: svg('<path d="M6 9l6 6 6-6"/>'),
   keyboard: svg('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
   warning: svg('<path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.01"/>'),
+  analyse: svg('<path d="M3 20c3-1 5-7 8-11s6-5 10-5"/><path d="M4 13l16-6" stroke-dasharray="2 3"/><circle cx="11" cy="9.6" r="1.6" fill="currentColor"/>'),
+  play: svg('<path d="M7 5l12 7-12 7z"/>'),
   trash: svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
 };

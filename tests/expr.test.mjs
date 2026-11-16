@@ -225,8 +225,20 @@ test('rows: errors are specific', () => {
   assert.match(dup.rows[2].error.message, /more than once/);
 
   const cyc = analyse([{ text: 'a = b' }, { text: 'b = a + 1' }]);
-  assert.match(cyc.rows[0].error.message, /in terms of itself/);
-  assert.match(cyc.rows[1].error.message, /in terms of itself/);
+  assert.equal(cyc.rows[0].error.message, "'a' and 'b' depend on each other");
+  assert.equal(cyc.rows[1].error.message, "'a' and 'b' depend on each other");
+
+  // Rows outside the loop are told which definition to fix; three-way loops are named.
+  const loop3 = analyse([{ text: 'p = q' }, { text: 'q = r_1 + 1' }, { text: 'r_1 = 2q' }, { text: 'y = p x' }, { text: 'k = m' }, { text: 'm = n' }, { text: 'n = k' }]);
+  assert.equal(loop3.rows[0].error.message, "'q' has an error – fix its definition first");
+  assert.equal(loop3.rows[1].error.message, "'q' and 'r_1' depend on each other");
+  assert.equal(loop3.rows[2].error.message, "'q' and 'r_1' depend on each other");
+  assert.equal(loop3.rows[3].error.message, "'p' has an error – fix its definition first");
+  for (const i of [4, 5, 6]) assert.equal(loop3.rows[i].error.message, "'k', 'm' and 'n' depend on each other in a loop");
+
+  const fnLoop = analyse([{ text: 'f(x) = g(x) + 1' }, { text: 'g(x) = 2f(x)' }]);
+  assert.equal(fnLoop.rows[0].error.message, "'f' and 'g' depend on each other");
+  assert.equal(fnLoop.rows[1].error.message, "'f' and 'g' depend on each other");
 
   const rec = analyse([{ text: 'f(x) = f(x - 1)' }]);
   assert.match(rec.rows[0].error.message, /in terms of itself/);

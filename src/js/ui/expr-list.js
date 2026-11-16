@@ -4,16 +4,22 @@ import { ICONS } from './icons.js';
 import { newRow, nextColor } from '../state/defaults.js';
 import { formatNumber } from '../expr/format.js';
 import { defaultDomain } from '../expr/model.js';
-import { isPlottable } from './graph-view.js';
+import { niceStep } from '../plot/viewport.js';
+import { integrate } from '../numerics/integrate.js';
+import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
 
 const ERROR_DELAY = 900; // ms after the last keystroke before showing an error in the row being edited
 const TABLE_ROWS = 10;
+const MAX_POI_CHIPS = 12;
+const POI_SHORT = { root: 'Root', max: 'Max', min: 'Min', 'y-intercept': 'y-int', intersection: '∩' };
+const MINUS = '−';
+const fmt = (v, sig = 8) => formatNumber(v, sig);
 
 const INPUT_ATTRS = {
   autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next',
 };
 
-export function createExprList({ listEl, addBtn, store }) {
+export function createExprList({ listEl, addBtn, store, graph }) {
   const els = new Map(); // row id -> element refs
   const lastEdit = new Map(); // row id -> timestamp
   let errorTimer = 0;
@@ -24,7 +30,7 @@ export function createExprList({ listEl, addBtn, store }) {
     ...s, rows: s.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
   }));
 
-  function insertRow(afterId, text = '') {
+  function insertRow(afterId, text = '', { focus = true } = {}) {
     let id;
     store.update((s) => {
       id = s.nextId;
@@ -34,9 +40,17 @@ export function createExprList({ listEl, addBtn, store }) {
       rows.splice(at, 0, row);
       return { ...s, nextId: id + 1, rows };
     });
-    focusRow(id);
+    if (focus) focusRow(id);
     return id;
   }
+
+  // Sliders for undefined names: a = 1, b = 1 … inserted after the row that needs them.
+  function addSliders(afterId, names) {
+    let after = afterId;
+    for (const n of names) after = insertRow(after, `${n} = 1`, { focus: false });
+  }
+
+  const rowById = (id) => store.get().rows.find((k) => k.id === id);
 
   function deleteRow(id, focusNeighbour = false) {
     const rows = store.get().rows;
@@ -113,6 +127,71 @@ export function createExprList({ listEl, addBtn, store }) {
     });
     const num = h('span', { class: 'row-num', 'aria-hidden': 'true' });
     const status = h('div', { class: 'expr-status', 'aria-live': 'polite' });
+    input.addEventListener('focus', () => {
+      const i = store.get().rows.findIndex((k) => k.id === id);
+      if (latest && isFunctionOfX(latest.analysis.rows[i]) && graph) graph.select(id);
+    });
+
+    // "Add slider" chips for undefined names.
+    const missing = h('div', { class: 'missing', hidden: true });
+    missing.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-names]');
+      if (b) addSliders(id, b.dataset.names.split(','));
+    });
+
+    // Slider for a = <number>.
+    const range = h('input', { class: 'slider', type: 'range', 'aria-label': 'Value' });
+    const sMin = h('input', { class: 'mini-input slider-bound', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Slider minimum' });
+    const sMax = h('input', { class: 'mini-input slider-bound', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Slider maximum' });
+    sMin.addEventListener('input', () => updateRow(id, { sliderMin: sMin.value }));
+    sMax.addEventListener('input', () => updateRow(id, { sliderMax: sMax.value }));
+    range.addEventListener('input', () => {
+      const e2 = els.get(id);
+      if (!e2 || !e2.sliderName) return;
+      const step = Number(range.step) || 0.1;
+      const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
+      const v = Number(Number(range.value).toFixed(decimals));
+      updateRow(id, { text: `${e2.sliderName} = ${v}` });
+    });
+    const slider = h('div', { class: 'expr-slider', hidden: true }, sMin, range, sMax);
+
+    // Analysis panel.
+    const derivText = h('span', { class: 'an-deriv' });
+    const derivBtn = h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': 'false',
+      onClick: () => {
+        const r = rowById(id);
+        if (r) updateRow(id, { showDeriv: !r.showDeriv });
+      },
+    }, 'Show');
+    const derivRow = h('div', { class: 'an-row' }, derivText, derivBtn);
+    const atInput = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'x value' });
+    atInput.addEventListener('input', () => updateRow(id, { atX: atInput.value }));
+    const atOut = h('div', { class: 'an-out' });
+    const atRow = h('div', { class: 'an-block' }, h('label', { class: 'an-row' }, h('span', { class: 'an-label' }, 'At x ='), atInput), atOut);
+    const intFrom = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Integral from' });
+    const intTo = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Integral to' });
+    intFrom.addEventListener('input', () => updateRow(id, { intFrom: intFrom.value }));
+    intTo.addEventListener('input', () => updateRow(id, { intTo: intTo.value }));
+    const intLabel = h('span', { class: 'an-label' });
+    const intVar = h('span', { class: 'an-label' });
+    const intOut = h('div', { class: 'an-out' });
+    const intRow = h('div', { class: 'an-block' }, h('div', { class: 'an-row' }, intLabel, intFrom, intVar, intTo), intOut);
+    const poiHead = h('div', { class: 'an-note' });
+    const poiList = h('div', { class: 'poi-list' });
+    poiList.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-x]');
+      if (b && graph) graph.showPoint(id, Number(b.dataset.x), Number(b.dataset.y), b.dataset.kind);
+    });
+    const poiBlock = h('div', { class: 'an-block' }, poiList, poiHead);
+    const analysisPanel = h('div', { class: 'expr-analysis', hidden: true }, derivRow, atRow, intRow, poiBlock);
+    const analysisBtn = h('button', {
+      class: 'row-btn', type: 'button', html: ICONS.analyse, 'aria-label': 'Analyse: derivative, values, integral', 'aria-pressed': 'false',
+      onClick: () => {
+        const r = rowById(id);
+        if (r) updateRow(id, { showAnalysis: !r.showAnalysis });
+      },
+    });
 
     const domMinInput = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Start of range' });
     const domMaxInput = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'End of range' });
@@ -156,12 +235,16 @@ export function createExprList({ listEl, addBtn, store }) {
 
     const li = h('li', { class: 'expr-row', dataset: { id: String(id) } },
       h('div', { class: 'row-left' }, swatch, num),
-      h('div', { class: 'expr-main' }, input, status, domain, table),
-      h('div', { class: 'row-actions' }, tableBtn, delBtn),
+      h('div', { class: 'expr-main' }, input, status, missing, slider, domain, table),
+      h('div', { class: 'row-actions' }, analysisBtn, tableBtn, delBtn),
+      analysisPanel,
     );
     return {
       li, input, swatch, num, status, domain, domMinInput, domMaxInput, domVar1, domError,
       table, tStart, tStep, tHeadA, tHeadB, tBody, tableErr, tableBtn,
+      missing, missingKey: '', slider, range, sMin, sMax, sliderName: null,
+      analysisBtn, analysisPanel, derivRow, derivText, derivBtn, atRow, atInput, atOut,
+      intRow, intLabel, intVar, intFrom, intTo, intOut, poiBlock, poiHead, poiList, poiKey: '',
     };
   }
 
@@ -227,6 +310,19 @@ export function createExprList({ listEl, addBtn, store }) {
     setHidden(e.status, !text);
     e.li.classList.toggle('has-error', cls === 'is-error');
 
+    // Offer sliders for undefined names.
+    const names = r.kind === 'error' && !editing && r.error.missing ? r.error.missing : [];
+    setHidden(e.missing, !names.length);
+    const key = names.join(',');
+    if (key !== e.missingKey) {
+      e.missingKey = key;
+      const chips = names.slice(0, 6).map((n) => h('button', { type: 'button', class: 'chip', dataset: { names: n } }, n));
+      if (names.length > 1) chips.push(h('button', { type: 'button', class: 'chip chip-all', dataset: { names: key } }, 'all'));
+      e.missing.replaceChildren(h('span', { class: 'an-label' }, names.length > 1 ? 'Add sliders:' : 'Add slider:'), ...chips);
+    }
+
+    renderSlider(e, row, r, analysis);
+
     // Domain for polar / parametric rows.
     const hasDomain = r.kind === 'polar' || r.kind === 'parametric';
     setHidden(e.domain, !hasDomain);
@@ -249,6 +345,186 @@ export function createExprList({ listEl, addBtn, store }) {
     const showTable = tableable && row.showTable;
     setHidden(e.table, !showTable);
     if (showTable) renderTable(e, row, r, analysis);
+
+    // Analysis panel.
+    const analysable = isFunctionOfX(r) || r.kind === 'polar';
+    setHidden(e.analysisBtn, !analysable);
+    e.analysisBtn.setAttribute('aria-pressed', String(!!row.showAnalysis));
+    const showAnalysis = analysable && row.showAnalysis;
+    setHidden(e.analysisPanel, !showAnalysis);
+    if (showAnalysis) renderAnalysis(e, row, r, analysis);
+  }
+
+  function renderSlider(e, row, r, analysis) {
+    const show = r.kind === 'variable' && r.slider && Number.isFinite(r.value);
+    setHidden(e.slider, !show);
+    if (!show) {
+      e.sliderName = null;
+      return;
+    }
+    e.sliderName = r.name;
+    const v = r.value;
+    let lo = fieldValue(analysis, row.sliderMin);
+    let hi = fieldValue(analysis, row.sliderMax);
+    const defLo = Math.min(-10, Math.floor(v));
+    const defHi = Math.max(10, Math.ceil(v));
+    if (lo === null) lo = Math.min(defLo, hi === null ? defLo : hi - 1);
+    if (hi === null) hi = Math.max(defHi, lo + 1);
+    if (!(hi > lo)) hi = lo + 1;
+    const step = niceStep((hi - lo) / 200);
+    e.sMin.placeholder = formatNumber(Math.min(defLo, hi - 1), 6);
+    e.sMax.placeholder = formatNumber(Math.max(defHi, lo + 1), 6);
+    syncInput(e.sMin, row.sliderMin);
+    syncInput(e.sMax, row.sliderMax);
+    const attrs = { min: String(lo), max: String(hi), step: String(step) };
+    for (const [k, val] of Object.entries(attrs)) if (e.range[k] !== val) e.range[k] = val;
+    if (document.activeElement !== e.range || Number(e.range.value) !== v) {
+      const want = String(v);
+      if (e.range.value !== want) e.range.value = want;
+    }
+    e.range.setAttribute('aria-valuetext', `${r.name} = ${formatNumber(v)}`);
+  }
+
+  // Derivative, value and tangent at x, integral, and points of interest in view.
+  function renderAnalysis(e, row, r, analysis) {
+    const polar = r.kind === 'polar';
+    setHidden(e.derivRow, polar);
+    setHidden(e.atRow, polar);
+    setHidden(e.poiBlock, polar);
+    syncInput(e.intFrom, row.intFrom);
+    syncInput(e.intTo, row.intTo);
+
+    if (polar) {
+      const def = defaultDomain(analysis.angle);
+      setText(e.intLabel, 'Area from θ =');
+      setText(e.intVar, 'to');
+      e.intFrom.placeholder = row.domainMin || def.minText;
+      e.intTo.placeholder = row.domainMax || def.maxText;
+      const a = fieldValue(analysis, row.intFrom) ?? r.domain.min;
+      const b = fieldValue(analysis, row.intTo) ?? r.domain.max;
+      const k = analysis.angle === 'deg' ? Math.PI / 180 : 1;
+      const res = integrate((t) => {
+        const rad = r.f(t);
+        return 0.5 * rad * rad * k;
+      }, a, b);
+      renderIntegral(e.intOut, res, '½∫r² dθ', b - a > (analysis.angle === 'deg' ? 360 : 2 * Math.PI) + 1e-9
+        ? 'The range is more than a full turn, so overlapping parts are counted more than once.' : '');
+      return;
+    }
+
+    // Derivative
+    const d = r.derivative ? r.derivative() : null;
+    const name = r.kind === 'function' ? `${r.name}′(x)` : 'dy/dx';
+    let dText;
+    if (!d) dText = `${name}: can't be worked out here`;
+    else if (d.text) dText = `${name} = ${pretty(d.text)}`;
+    else dText = `${name}: worked out numerically`;
+    setText(e.derivText, dText);
+    e.derivBtn.setAttribute('aria-pressed', String(!!row.showDeriv));
+    setText(e.derivBtn, row.showDeriv ? 'Shown' : 'Show');
+    e.derivBtn.disabled = !d;
+
+    // Value, slope and tangent at x
+    e.atInput.placeholder = 'e.g. 1';
+    syncInput(e.atInput, row.atX);
+    const a = fieldValue(analysis, row.atX);
+    let at = '';
+    let atErr = false;
+    if (row.atX.trim()) {
+      const ev = analysis.evaluate(row.atX);
+      if (ev.error) {
+        at = ev.error.message;
+        atErr = true;
+      } else if (a !== null) {
+        const y = r.f(a);
+        if (!Number.isFinite(y)) {
+          at = `${r.kind === 'function' ? r.name + '(x)' : 'y'} is undefined at x = ${fmt(a)}`;
+          atErr = true;
+        } else {
+          const m = d ? d.f(a) : NaN;
+          const lines = [`y = ${fmt(y)}`];
+          if (Number.isFinite(m)) {
+            lines.push(`gradient ${fmt(m)}`);
+            let c = y - m * a;
+            if (Math.abs(c) < 1e-12 * Math.max(1, Math.abs(y), Math.abs(m * a))) c = 0;
+            let tangent = m === 0 ? fmt(y) : `${fmtCoef(m)}x`;
+            if (m !== 0 && c !== 0) tangent += ` ${c < 0 ? MINUS : '+'} ${fmt(Math.abs(c))}`;
+            lines.push(`tangent y = ${tangent}`);
+          } else {
+            lines.push('no gradient here');
+          }
+          at = lines.join(' · ');
+        }
+      }
+    }
+    setText(e.atOut, at);
+    e.atOut.classList.toggle('is-error', atErr);
+    setHidden(e.atOut, !at);
+
+    // Integral
+    setText(e.intLabel, '∫ from');
+    setText(e.intVar, 'to');
+    e.intFrom.placeholder = 'a';
+    e.intTo.placeholder = 'b';
+    const ia = fieldValue(analysis, row.intFrom);
+    const ib = fieldValue(analysis, row.intTo);
+    const badBound = [row.intFrom, row.intTo].map((t) => (t.trim() ? analysis.evaluate(t) : null)).find((v) => v && v.error);
+    if (badBound) {
+      setText(e.intOut, badBound.error.message);
+      e.intOut.classList.add('is-error');
+      setHidden(e.intOut, false);
+    } else if (ia !== null && ib !== null) {
+      renderIntegral(e.intOut, integrate(r.f, ia, ib), '∫', '');
+    } else {
+      setHidden(e.intOut, true);
+    }
+
+    // Points of interest in the visible range
+    const data = graph ? graph.pointsFor(row.id) : null;
+    if (!data) {
+      setText(e.poiHead, 'Open the graph to list roots, extrema and intersections.');
+      e.poiList.replaceChildren();
+      e.poiKey = '';
+      return;
+    }
+    const pois = [...data.pois].sort((p, q) => p.x - q.x);
+    const key = `${data.xMin}|${data.xMax}|${pois.map((p) => `${p.kind}${p.x}`).join()}`;
+    if (key === e.poiKey) return;
+    e.poiKey = key;
+    const chips = pois.slice(0, MAX_POI_CHIPS).map((p) => {
+      const text = p.kind === 'root' ? `Root ${fmt(p.x, 6)}` : `${POI_SHORT[p.kind]} (${fmt(p.x, 6)}, ${fmt(p.y, 6)})`;
+      return h('button', { type: 'button', class: 'chip poi-chip', dataset: { x: String(p.x), y: String(p.y), kind: p.kind } }, text);
+    });
+    e.poiList.replaceChildren(...chips);
+    const more = pois.length > MAX_POI_CHIPS ? ` Showing ${MAX_POI_CHIPS} of ${pois.length}.` : '';
+    setText(e.poiHead, pois.length
+      ? `In view, x from ${fmt(data.xMin, 4)} to ${fmt(data.xMax, 4)}. Tap a point to mark it. Points closer together than the screen can show may be missed.${more}`
+      : `No roots, extrema or intersections for x from ${fmt(data.xMin, 4)} to ${fmt(data.xMax, 4)}. Pan or zoom to look elsewhere.`);
+  }
+
+  function renderIntegral(el, res, symbol, note) {
+    el.classList.toggle('is-error', !res.ok);
+    let text;
+    if (!res.ok) text = res.message;
+    else {
+      const err = res.error > 0 ? ` (± ${formatNumber(res.error, 2)})` : '';
+      text = `${symbol} = ${fmt(res.value, 10)}${err}`;
+      if (res.message) text += ` – ${res.message}`;
+      if (note) text += ` ${note}`;
+    }
+    setText(el, text);
+    setHidden(el, false);
+  }
+
+  // Display form of printed maths: proper minus signs and dots.
+  function pretty(text) {
+    return text.replace(/(?<!\de)-/g, MINUS);
+  }
+
+  function fmtCoef(m) {
+    if (m === 1) return '';
+    if (m === -1) return MINUS;
+    return fmt(m);
   }
 
   function renderTable(e, row, r, analysis) {
@@ -271,5 +547,10 @@ export function createExprList({ listEl, addBtn, store }) {
     }
   }
 
-  return { render, insertRow, focusRow };
+  // Re-render with the latest state, e.g. after the graph view moved (points in view).
+  function refresh() {
+    if (latest) render(latest.state, latest.analysis);
+  }
+
+  return { render, refresh, insertRow, focusRow };
 }

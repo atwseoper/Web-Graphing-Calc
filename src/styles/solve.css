@@ -1,0 +1,112 @@
+/* Solve tab */
+.solve {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 24px;
+}
+
+.solve-modes { margin-bottom: 2px; }
+
+.solve-section { display: grid; gap: 10px; }
+
+.field-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.solve-input {
+  width: 100%;
+  height: 50px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 18px;
+}
+.solve-input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+
+.solve-for {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.solve-for .chip {
+  min-width: 44px;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1rem;
+}
+
+.given { display: grid; gap: 6px; }
+.given-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.given-name {
+  min-width: 34px;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+}
+.given-input { width: 120px; }
+.given-error { color: var(--error); font-size: 0.8rem; }
+
+.solve-range .mini-input { width: 80px; }
+
+.sys-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sys-line { display: flex; align-items: center; gap: 4px; }
+.sys-item .expr-status { margin: 4px 4px 0; }
+.sys-list .row-btn { font-size: 1.3rem; }
+.solve-section .text-btn { justify-self: start; margin: 0; padding: 0 4px; }
+
+.solve-error { margin: 0 2px; }
+
+.solve-results { display: grid; gap: 8px; }
+.solve-results:empty { display: none; }
+.result-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.result-main {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.result-detail {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.poly-form { font-family: var(--mono); font-size: 0.9rem; color: var(--text); }
+.solve-note:empty { display: none; }
+
+.primary-btn {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.solve-help { margin: 4px 2px; }

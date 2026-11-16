@@ -7,6 +7,8 @@ import { createExprList } from './ui/expr-list.js';
 import { createKeypad } from './ui/keypad.js';
 import { createSheet } from './ui/sheet.js';
 import { createCalcPanel } from './ui/calc-panel.js';
+import { createSolvePanel } from './ui/solve-panel.js';
+import { newRow, nextColor } from './state/defaults.js';
 import { createSettings } from './ui/settings.js';
 import { ICONS } from './ui/icons.js';
 import { debounce } from './ui/dom.js';
@@ -41,7 +43,38 @@ $('btn-zoom-out').addEventListener('click', () => graph.zoomBy(1 / 1.5));
 $('btn-home').addEventListener('click', () => graph.home());
 $('btn-fit').addEventListener('click', () => graph.fit());
 
-const exprList = createExprList({ listEl: $('expr-list'), addBtn: $('btn-add-row'), store });
+const exprList = createExprList({ listEl: $('expr-list'), addBtn: $('btn-add-row'), store, graph });
+
+// "Show on graph" from the Solve tab: add the rows (unless they are already there), switch
+// to the graph, frame the solutions and select the first curve so its points show.
+function showOnGraph(result) {
+  let firstId = null;
+  store.update((s) => {
+    const rows = [...s.rows];
+    let nextId = s.nextId;
+    // New rows go before any blank rows at the end of the list.
+    let at = rows.length;
+    while (at > 0 && !rows[at - 1].text.trim()) at--;
+    for (const text of result.graph) {
+      const i = rows.findIndex((r) => r.text.trim() === text);
+      if (i >= 0) {
+        if (rows[i].hidden) rows[i] = { ...rows[i], hidden: false };
+        if (firstId === null) firstId = rows[i].id;
+        continue;
+      }
+      const row = newRow(nextId++, nextColor(rows), text);
+      rows.splice(at++, 0, row);
+      if (firstId === null) firstId = row.id;
+    }
+    return { ...s, rows, nextId, ui: { ...s.ui, tab: 'graph' } };
+  });
+  if (result.frame) graph.frameX(result.frame[0], result.frame[1]);
+  if (firstId !== null) graph.select(firstId);
+}
+
+graph.onViewChange(debounce(() => exprList.refresh(), 250));
+
+const solvePanel = createSolvePanel({ root: $('tab-solve'), store, getAnalysis, onShowOnGraph: showOnGraph });
 
 const calc = createCalcPanel({
   historyEl: $('calc-history'), input: $('calc-input'), equalsBtn: $('calc-equals'),
@@ -145,6 +178,7 @@ function renderTabs(state) {
 function renderAll(state) {
   exprList.render(state, analysis);
   calc.render(state);
+  solvePanel.render(state);
   settings.render(state);
   renderTabs(state);
   graph.requestDraw();

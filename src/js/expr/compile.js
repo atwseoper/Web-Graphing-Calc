@@ -8,12 +8,15 @@
 //   angle: 'rad' | 'deg',
 //   variable(name) -> number | undefined,    user-defined constants
 //   func(name) -> { arity, call(args) } | undefined,   user-defined functions
+//   funcDeriv(name, order, node) -> { arity, call(args) } | undefined   f'(x), f''(x)
 //   used: Set (optional)                     collects the slot names actually read
 //   unknown(name, node) -> never (optional)  custom error for undefined names
 // }
 import { ExprError } from './errors.js';
 import { FUNCTIONS, CONSTANTS, isConstantName } from './builtins.js';
 import { factorial, realPow } from '../numerics/special.js';
+
+const MAX_SERIES_TERMS = 1e6;
 
 export function compile(node, ctx) {
   const c = compileNode(node, ctx);
@@ -71,6 +74,18 @@ function compileNode(node, ctx) {
     case 'tuple':
       throw new ExprError('A point (a, b) can only be used on its own', node.start, node.end);
 
+    case 'piecewise':
+      return compilePiecewise(node, ctx);
+
+    case 'cmp':
+      throw new ExprError('A comparison can only be used as a condition in { }', node.start, node.end);
+
+    case 'series':
+      return compileSeries(node, ctx);
+
+    case 'nderiv':
+      return compileNumericDerivative(node, ctx);
+
     default:
       throw new ExprError(`Unknown expression`, node.start, node.end);
   }
@@ -91,6 +106,114 @@ function dynamic(fn) {
   return { constant: false, fn };
 }
 
+// ---- conditions ---------------------------------------------------------------------
+
+const COMPARE = {
+  '<': (a, b) => a < b,
+  '>': (a, b) => a > b,
+  '<=': (a, b) => a <= b,
+  '>=': (a, b) => a >= b,
+};
+
+function compileCondition(cmp, ctx) {
+  const items = cmp.items.map((a) => compileNode(a, ctx).fn);
+  const tests = cmp.ops.map((op) => COMPARE[op]);
+  if (items.length === 2) {
+    const [fa, fb] = items;
+    const t = tests[0];
+    return (fr) => t(fa(fr), fb(fr));
+  }
+  return (fr) => {
+    let prev = items[0](fr);
+    for (let i = 0; i < tests.length; i++) {
+      const next = items[i + 1](fr);
+      if (!tests[i](prev, next)) return false;
+      prev = next;
+    }
+    return true;
+  };
+}
+
+function compilePiecewise(node, ctx) {
+  const conds = node.branches.map((b) => compileCondition(b.cond, ctx));
+  const values = node.branches.map((b) => (b.value ? compileNode(b.value, ctx).fn : () => 1));
+  const otherwise = node.otherwise ? compileNode(node.otherwise, ctx).fn : () => NaN;
+  const n = conds.length;
+  if (n === 1) {
+    const [c] = conds;
+    const [v] = values;
+    return dynamic((fr) => (c(fr) ? v(fr) : otherwise(fr)));
+  }
+  return dynamic((fr) => {
+    for (let i = 0; i < n; i++) if (conds[i](fr)) return values[i](fr);
+    return otherwise(fr);
+  });
+}
+
+// ---- sum / prod --------------------------------------------------------------------------
+
+// A child context with an extra slot for `name`, appended after the existing slots.
+function withSlot(ctx, name) {
+  const slots = { ...(ctx.slots || {}) };
+  const size = Object.values(ctx.slots || {}).reduce((m, i) => Math.max(m, i + 1), 0);
+  slots[name] = size;
+  const child = { ...ctx, slots, used: new Set() };
+  return { child, index: size, size: size + 1 };
+}
+
+function propagateUsed(child, ctx, except) {
+  if (!ctx.used) return;
+  for (const u of child.used) if (u !== except) ctx.used.add(u);
+}
+
+function compileSeries(node, ctx) {
+  const from = compileNode(node.from, ctx).fn;
+  const to = compileNode(node.to, ctx).fn;
+  const { child, index, size } = withSlot(ctx, node.index);
+  const body = compileNode(node.body, child).fn;
+  propagateUsed(child, ctx, node.index);
+  const isSum = node.op === 'sum';
+  const buf = new Array(size).fill(0);
+  return dynamic((fr) => {
+    const a = Math.ceil(from(fr) - 1e-9);
+    const b = Math.floor(to(fr) + 1e-9);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
+    if (b - a + 1 > MAX_SERIES_TERMS) return NaN;
+    for (let i = 0; i < index; i++) buf[i] = fr[i];
+    let acc = isSum ? 0 : 1;
+    for (let k = a; k <= b; k++) {
+      buf[index] = k;
+      const v = body(buf);
+      acc = isSum ? acc + v : acc * v;
+    }
+    return acc;
+  });
+}
+
+// ---- numeric derivative ---------------------------------------------------------------------
+
+// d expr / dv at v = at, by central differences with Richardson extrapolation.
+function compileNumericDerivative(node, ctx) {
+  const at = node.at ? compileNode(node.at, ctx).fn : compileSym({ type: 'sym', name: node.v, start: -1, end: -1 }, ctx).fn;
+  const { child, index, size } = withSlot(ctx, node.v);
+  const f = compileNode(node.expr, child).fn;
+  propagateUsed(child, ctx, node.v);
+  const buf = new Array(size).fill(0);
+  return dynamic((fr) => {
+    const x = at(fr);
+    if (!Number.isFinite(x)) return NaN;
+    for (let i = 0; i < index; i++) buf[i] = fr[i];
+    const ev = (t) => {
+      buf[index] = t;
+      return f(buf);
+    };
+    const h = 1e-3 * Math.max(1, Math.abs(x));
+    const d1 = (ev(x + h) - ev(x - h)) / (2 * h);
+    const d2 = (ev(x + h / 2) - ev(x - h / 2)) / h;
+    return d2 + (d2 - d1) / 3;
+  });
+}
+
 function compileSym(node, ctx) {
   const name = node.name;
   if (ctx.slots && Object.prototype.hasOwnProperty.call(ctx.slots, name)) {
@@ -108,7 +231,9 @@ function compileSym(node, ctx) {
     throw new ExprError(`${name} needs an argument, e.g. ${name}(x)`, node.start, node.end);
   }
   if (ctx.unknown) ctx.unknown(name, node);
-  throw new ExprError(`'${name}' is not defined`, node.start, node.end);
+  const e = new ExprError(`'${name}' is not defined`, node.start, node.end);
+  e.missing = name;
+  throw e;
 }
 
 function checkArity(name, arity, n, node) {
@@ -143,7 +268,15 @@ function compileBuiltinCall(node, ctx) {
 // name(args): user function call, or multiplication when name is a variable/slot/constant.
 function compileApply(node, ctx) {
   const name = node.name;
-  const userFn = ctx.func ? ctx.func(name, node) : undefined;
+  let userFn;
+  if (node.primes) {
+    userFn = ctx.funcDeriv ? ctx.funcDeriv(name, node.primes, node) : undefined;
+    if (!userFn) {
+      throw new ExprError(`'${name}' isn't a function – define ${name}(x) = … first`, node.nameStart ?? node.start, node.nameEnd ?? node.end);
+    }
+  } else {
+    userFn = ctx.func ? ctx.func(name, node) : undefined;
+  }
   if (userFn) {
     checkArity(name, [userFn.arity, userFn.arity], node.args.length, node);
     const args = node.args.map((a) => compileNode(a, ctx));
@@ -193,8 +326,33 @@ export function referencedNames(node, acc = { names: new Set(), calls: new Set()
       for (const a of node.args) referencedNames(a, acc);
       break;
     case 'tuple':
+    case 'cmp':
       for (const a of node.items) referencedNames(a, acc);
       break;
+    case 'piecewise':
+      for (const b of node.branches) {
+        referencedNames(b.cond, acc);
+        if (b.value) referencedNames(b.value, acc);
+      }
+      if (node.otherwise) referencedNames(node.otherwise, acc);
+      break;
+    case 'series': {
+      referencedNames(node.from, acc);
+      referencedNames(node.to, acc);
+      const inner = referencedNames(node.body, { names: new Set(), calls: new Set() });
+      inner.names.delete(node.index);
+      for (const n of inner.names) acc.names.add(n);
+      for (const n of inner.calls) acc.calls.add(n);
+      break;
+    }
+    case 'nderiv': {
+      const inner = referencedNames(node.expr, { names: new Set(), calls: new Set() });
+      inner.names.delete(node.v);
+      for (const n of inner.names) acc.names.add(n);
+      for (const n of inner.calls) acc.calls.add(n);
+      referencedNames(node.at || { type: 'sym', name: node.v }, acc);
+      break;
+    }
     default:
       break;
   }
