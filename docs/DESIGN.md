@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v1.0 – Phase 4 (polish and extras) complete; version 2 roadmap (Phases 5–9) planned · **Updated:** 18 November 2026
+**Status:** v1.0 – Phase 4 (polish and extras) complete; version 2 roadmap (Phases 5–10) planned · **Updated:** 18 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -42,7 +42,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D32 | Custom models are fitted after a short pause in typing, and non-linear fits have a time budget (about 0.4 s) spread over several starts; a fit that stops early says so and offers starting values. | 16 Nov 2026 |
 | D33 | Phase 4 takes all the optional extras: shaded inequalities, implicit curves, slope fields with ODE solution curves, a slider play button with a step setting, Add to Home screen, pretty-printed input and non-linear systems, plus undo, sharing, PNG export and the θ sweep. It is delivered as four pull requests (4a polish; 4b motion and display; 4c new graph types; 4d non-linear systems). | 16 Nov 2026 |
 | D34 | Undo covers rows, data sets and fits, Solve inputs, and the angle and grid settings, but not pan/zoom, the open tab, the keypad setting or the Calc history. Rapid edits to one field (typing, dragging a slider) merge into one step; a pause of 1 s or moving to another field starts a new one. Buttons at the top left of the graph; Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y. The Calc line and the paste box keep the browser's own undo. | 16 Nov 2026 |
-| D35 | A share link carries the whole project (rows, view, angle and grid, Solve inputs, data sets and fits) as deflate-compressed JSON in the URL fragment (`#g=…`), so nothing is uploaded. Links over 8,000 characters are refused with a pointer to the project file. Opening a link or a project file replaces the current work as one undoable step and keeps the user's keypad setting and Calc history. | 16 Nov 2026 |
+| D35 | A share link carries the whole project (rows, view, angle and grid, Solve inputs, data sets and fits) as deflate-compressed JSON in the URL fragment (`#g=…`), so nothing is uploaded. Links over 8,000 characters are refused with a pointer to the project file. Opening a link or a project file replaces the current work as one undoable step and keeps the user's keypad setting and Calc history. *(Links ask before opening from Phase 5: D47.)* | 16 Nov 2026 |
 | D36 | “Save image” renders the current view at 2× (or the screen's pixel ratio, up to 4096 px) with a key underneath listing the visible graphs, data sets and fits (with their rounded equations) in their colours. On phones it opens the share sheet. | 16 Nov 2026 |
 | D37 | Add to Home screen: the web app manifest and icons are generated on the page as data: URLs when it is served over http(s), so the file stays self-contained. There is no service worker, so the installed app needs a connection to start unless the browser has it cached. *(Offline start added by D45.)* | 16 Nov 2026 |
 | D38 | Pretty-printed input: under a Graph row, the parsed expression is drawn as maths (stacked fractions, powers, radicals, |x|, log bases, Σ/Π with limits, subscripts) whenever that shows something the typed text doesn't, so the user can check how it was read (`1/2x` = ½·x). Fractions inside exponents stay on one line. A setting hides it. The same layout gives one-line Unicode text (x², √x, a₁) for the key of exported images. | 16 Nov 2026 |
@@ -53,7 +53,8 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D43 | Slope fields: `y' = f(x, y)` or `dy/dx = f(x, y)` draws short marks on a 30 px grid fixed to the plane. “+ Solution curve” then a tap on the graph adds a starting point (up to 12 per row, kept in the row and removable as chips); each solution is integrated by RK4 both ways across the visible x range, stopping when it leaves the view by more than its height. | 16 Nov 2026 |
 | D44 | Non-linear systems in the Solve tab's System mode: when any equation isn't linear, the system must have as many equations as unknowns (at most 6). It is solved by damped Newton (Levenberg–Marquardt, with exact symbolic Jacobians where possible) from about 240 starting points spread over −10…10 for each unknown (a grid for up to 3 unknowns, a Halton sequence beyond), widening to ±1000 if nothing is found, within a time budget. Every different solution is listed with its residual, and the note says the search can miss solutions. With two unknowns, “Show on graph” adds each equation (as an implicit curve where needed) and the solution points. Linear systems are still solved exactly. | 16 Nov 2026 |
 | D45 | Exception to D5 for the GitHub Pages site only: the build also writes `dist/sw.js`, a service worker, so the installed app (phone home screen, or Chrome/Edge on Windows) starts with no connection. Browsers only register a service worker from a real same-origin script URL (`data:` and `blob:` are refused), so it can't be inlined. `graphcalc.html` stays fully self-contained and skips registration when opened from disk. The worker caches only the page itself and fetches nothing else. Updates arrive in the background: launches always use the saved copy, the browser fetches a new `sw.js` (which changes with every build) and caches the new page, and the page then shows a “New version · Reload” toast. Tapping it saves the work, activates the new version and reloads. | 18 Nov 2026 |
-| D46 | Version 2 roadmap, in this order: Phase 5 offline app; Phase 6 draggable points and visual calculus; Phase 7 log axes and statistics; Phase 8 photo digitiser; Phase 9 lists, curve families and sequences (section 7.1). Each phase is delivered as staged pull requests, merged once tests and the build pass, with its open questions (section 9) settled before coding starts. Free-text notes rows are ruled out, because shared links could carry abusive text that looks like part of the app. | 18 Nov 2026 |
+| D46 | Version 2 roadmap, in this order: Phase 5 offline app and shared-link confirmation; Phase 6 draggable points and visual calculus; Phase 7 log axes and statistics; Phase 8 photo digitiser; Phase 9 lists, curve families and sequences; Phase 10 notes, folders and examples (section 7.1). Each phase is delivered as staged pull requests, merged once tests and the build pass, with its open questions (section 9) settled before coding starts. Notes rows were at first ruled out, because shared links could carry abusive text. They are back in because links will ask before opening (D47), notes are plain text only (no links or formatting), and free text could already arrive in data set names and unparsed rows. | 18 Nov 2026 |
+| D47 | Shared links ask before opening. When the page opens with a `#g=…` link, or the link changes, the project is decoded and checked first; nothing replaces the current work until the user agrees. A dialog, “Open a shared project?”, says that the link holds graphs and data from someone else and should only be opened if the user trusts where it came from, and that it replaces what is on screen (undoable). It gives a factual summary (for example “4 graphs, 1 data set with 2 fits”), never text from the project itself. Open and Cancel buttons; Cancel has the focus, and Escape or tapping outside cancels. Cancel keeps the current work and clears the link from the address bar. Damaged links show the existing error with no dialog. Project files the user picks themselves, and the built-in examples (Phase 10), open without asking. | 18 Nov 2026 |
 
 ## 1. Purpose
 
@@ -177,7 +178,10 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra, **
 | Share via URL fragment; import/export JSON project | P2 | Easy | Done in Phase 4 (D35) |
 | Help panel with function reference | P2 | Easy | Done (D22) |
 | Add to Home screen (web app manifest) | P3 | Easy | Done in Phase 4 (D37) |
-| Offline start for the installed app, with background updates | v2 | Easy | Phase 5 (D45): service worker beside the page on Pages |
+| Offline start for the installed app, with background updates | v2 | Easy | Phase 5a (D45): service worker beside the page on Pages |
+| Confirmation before opening a shared link | v2 | Easy | Phase 5b (D47) |
+| Notes rows (plain text) and folders | v2 | Moderate | Phase 10a: needs row reordering, which doesn't exist yet |
+| Gallery of built-in example projects | v2 | Easy | Phase 10b |
 
 ## 4. Layout and visual design
 
@@ -250,6 +254,7 @@ build/
 - **Levenberg–Marquardt robustness:** poor starting values can converge to a local minimum or diverge. Mitigate with automatic initial guesses, multiple restarts, parameter scaling, clear convergence reporting, and sliders for manual starting values.
 - **Stale installed app (Phase 5):** a broken worker could pin users to an old version. Keep the worker minimal, never cache anything but the page, and keep a plain update path (the browser always re-checks `sw.js` itself).
 - **Touch conflicts (Phase 6a, Phase 8):** dragging a handle against panning, and placing points precisely with a finger. Use generous hit targets and a magnifier, and test on a real phone.
+- **Abusive text in shared projects (Phases 5b, 10a):** a link could carry offensive or misleading text in notes, folder or data set names, or rows that don't parse. Mitigations: the confirmation dialog (D47), text shown only as plain text with no links, and length caps.
 - **List performance (Phase 9a):** a 50-curve family samples 50 curves on every keystroke. Cap the counts and reuse the sampler's adaptive budget.
 
 ## 7. Phased delivery plan
@@ -260,23 +265,32 @@ build/
 | 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
 | 3 – Data & Fit ✅ | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
 | 4 – Polish & extras ✅ | Undo, sharing, project files, PNG export, home-screen install, θ sweep, slider play, pretty-printing, inequalities, implicit curves, slope fields, non-linear systems | Release |
-| 5 – Offline app | Service worker for offline start; background updates with a “New version · Reload” toast | Installed app works with no signal |
+| 5 – Offline app & safe sharing | 5a service worker for offline start, background updates with a “New version · Reload” toast; 5b confirmation before opening a shared link | Installed app works with no signal; links can't silently replace work |
 | 6 – Drag & calculus | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
 | 7 – Axes & statistics | 7a log and log-log axes; 7b summary statistics, histograms, box plots, distribution functions | Parity with a handheld's statistics |
 | 8 – Photo digitiser | Image import, axis calibration, tapping points into a data set | Real-world data straight into fitting |
-| 9 – Lists & sequences | 9a lists, ranges and curve families; 9b recursive sequences, term plots, cobweb diagrams | Version 2.0 |
+| 9 – Lists & sequences | 9a lists, ranges and curve families; 9b recursive sequences, term plots, cobweb diagrams | Richer expressions |
+| 10 – Notes & examples | 10a notes rows, folders and row reordering; 10b built-in examples gallery | Version 2.0 |
 
-Phases 5–9 make up the version 2 roadmap (D46). The order puts the small, self-contained work first: Phase 5 means every later release reaches installed apps through the update toast. Phase 6 builds on code that already exists (sliders, the play mechanics, `derive.js`, the analysis panel). Log axes (7a) come before the digitiser, so calibrating a log-scaled image can reuse the same mapping. Lists (Phase 9) come last because they change the expression engine everywhere.
+Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, self-contained work first: Phase 5 means every later release reaches installed apps through the update toast, and the shared-link confirmation is in place well before notes arrive. Phase 6 builds on code that already exists (sliders, the play mechanics, `derive.js`, the analysis panel). Log axes (7a) come before the digitiser, so calibrating a log-scaled image can reuse the same mapping. Lists (Phase 9) come late because they change the expression engine everywhere. Notes and examples (Phase 10) come last, so the examples can show off everything version 2 adds.
 
 ### 7.1 Version 2 phases in detail
 
-**Phase 5 – Offline app (one PR)**
+**Phase 5 – Offline app and safe sharing (two PRs)**
+
+*5a Offline app*
 - `build.mjs` writes `dist/sw.js` from a template, with the build info as the cache name, so every deploy changes the file's bytes. `graphcalc.html` and `index.html` are otherwise unchanged and still self-contained.
 - The page registers `./sw.js` only when it is served over https by a built page. The dev server and files opened from disk skip it, and a failed registration (a copy hosted elsewhere without `sw.js`) is silent.
 - The worker caches only the page in its scope. On install it saves `./`; it answers requests for pages in its scope from the cache, ignoring query strings (the `#g=` fragment never reaches it); any other request goes straight to the network.
 - Updates: the browser fetches a changed `sw.js` and installs it; the new worker caches the new page and waits. The page sees the waiting worker and shows a lasting toast, “New version · Reload”. Tapping it saves the current state, tells the worker to take over and reloads once it has. Nothing reloads without the tap.
 - Tests: the build test checks that `sw.js` exists, carries the build stamp and caches nothing outside its scope, and that `graphcalc.html` still passes the self-contained check. Manual check: install on Android and on Windows (Chrome or Edge), go offline, launch; deploy a change and see the toast.
 - CLAUDE.md is updated to match D45.
+
+*5b Shared-link confirmation (D47)*
+- `openFromHash` in `main.js` decodes and checks the project as now, then shows the dialog instead of applying it straight away. Open applies it as one undoable step with the existing “Opened a shared graph” toast and Undo. Cancel leaves everything as it was.
+- The summary line comes from a pure function in `state/share.js` (counts of graphs, points, data sets and fits; Solve inputs mentioned only if present), so it is unit-tested. It never includes text from the project.
+- The dialog reuses the help dialog's modal pattern: focus trapped, Cancel focused first, Escape and the backdrop cancel, 44 px buttons, and it works with the keypad closed.
+- A second link arriving while the dialog is open replaces the first in the dialog.
 
 **Phase 6 – Draggable points and visual calculus (two PRs)**
 - *6a Draggable points.* A point row whose coordinates are slider variables, such as `(h, k)`, gets a larger handle that can be dragged. Dragging updates the sliders, snaps to their steps and counts as one undo step (as D39 does for play). If one coordinate is a lone slider and the other is an expression in it, as in `(a, f(a))`, the point slides along the curve and follows the finger's x. Handles take priority over panning within a 44 px touch target. Deciding which coordinates can be dragged is a pure function of the parsed row, so it is unit-tested.
@@ -298,7 +312,7 @@ Phases 5–9 make up the version 2 roadmap (D46). The order puts the small, self
 - “From photo” in the Data tab opens an image (on phones the picker offers the camera) in a full-screen digitising view with pinch-zoom and a magnifier under the finger.
 - Calibration: place two reference points on each axis and type their values. Each axis is linear or log. The mapping from pixels to values is affine, built from the two axis lines, so it allows for a rotated or slightly skewed image. Perspective isn't corrected.
 - Then tap to add points; points can be dragged and deleted. “Done” makes a new data set (x, y), ready for fitting.
-- The image itself isn't kept in the project, only the points (see question 13). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
+- The image itself isn't kept in the project, only the points (see question 14). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
 
 **Phase 9 – Lists, curve families and sequences (two PRs)**
 - *9a Lists.*
@@ -310,6 +324,17 @@ Phases 5–9 make up the version 2 roadmap (D46). The order puts the small, self
   - A function that refers to itself at n − 1 (or n − 2 …) together with starting-value rows such as `u(0) = 0.2` is a recursive sequence, not a circular definition. It is evaluated with memoisation for whole n ≥ 0, up to n = 10⁵.
   - Sequence rows plot their terms as points (n, u(n)) and evaluate in the Calc tab (`u(50)`).
   - First-order recurrences u(n) = g(u(n − 1)) offer a cobweb diagram: y = g(x), y = x and the staircase, with a play button that adds one step at a time.
+
+**Phase 10 – Notes, folders and examples (two PRs)**
+- *10a Notes, folders and row reordering.*
+  - The add button offers Expression, Note and Folder. Notes and folders are new row kinds in the state, so saving, sharing and undo cover them.
+  - A note is plain text, at most 500 characters. It is always shown as text: no HTML, no formatting, and web addresses aren't turned into links. Notes aren't evaluated, and they're left out of the key on exported images.
+  - A folder is a named row (at most 40 characters, plain text) that groups the rows under it, one level deep. It can collapse, and it can hide or show everything in it in one tap.
+  - Rows get a drag handle for reordering; on touch the drag starts after a short press so it doesn't fight scrolling. Dropping a row under a folder puts it in that folder. Row order is otherwise meaningless (section 8), so reordering only changes the display.
+- *10b Examples gallery.*
+  - An “Examples” section in the help dialog, and a link to it in the empty-list hint, opens a list of about 8–12 built-in projects with a one-line description each.
+  - Candidate examples: projectile with a draggable launch angle; Newton's law of cooling fitted to data; Lissajous curves; predator–prey slope field; the logistic map's cobweb diagram; Riemann sums converging; normal-distribution probabilities; a digitised arch fitted with a parabola.
+  - The examples are project JSON files in `src/examples/`, inlined by the build. Opening one replaces the current work as one undoable step, with no trust dialog (D47). A unit test opens every example and checks that it parses with no errors, so they keep working as the app changes.
 
 ## 8. Expression syntax (as implemented)
 
@@ -349,25 +374,31 @@ Version 2: to settle before each phase starts. Each has a proposed answer.
 
 *Phase 5*
 4. Should the app ask the browser for persistent storage (`navigator.storage.persist()`) when it runs as an installed app, so the saved copy and auto-save are never cleared? *Proposed: yes, installed only, with no prompt of our own.*
+5. Should project files the user opens themselves also show the shared-project dialog? *Proposed: no; they were chosen deliberately in a file picker, unlike a link that opens with one tap.*
 
 *Phase 6*
-5. When a dragged point goes past a slider's min or max, should it stop at the edge or widen the range? *Proposed: widen it, as typing a value outside the range already does (D19).*
-6. Beyond lone sliders and `(a, f(a))`, should points with linked coordinates such as `(a, 2a)` be draggable? *Proposed: not in 6a.*
-7. Taylor polynomials for functions without a full symbolic derivative (gamma, nCr, !): leave them out, or use numeric derivatives up to a low degree? *Proposed: leave them out and say why.*
-8. Should Simpson's rule be one of the Riemann methods? *Proposed: no; it isn't a Riemann sum, and the panel already shows the accurate value.*
+6. When a dragged point goes past a slider's min or max, should it stop at the edge or widen the range? *Proposed: widen it, as typing a value outside the range already does (D19).*
+7. Beyond lone sliders and `(a, f(a))`, should points with linked coordinates such as `(a, 2a)` be draggable? *Proposed: not in 6a.*
+8. Taylor polynomials for functions without a full symbolic derivative (gamma, nCr, !): leave them out, or use numeric derivatives up to a low degree? *Proposed: leave them out and say why.*
+9. Should Simpson's rule be one of the Riemann methods? *Proposed: no; it isn't a Riemann sum, and the panel already shows the accurate value.*
 
 *Phase 7*
-9. Which quartile method? *Proposed: the TI-84 method (medians of the lower and upper halves), named on the card.*
-10. Should hypothesis tests and confidence intervals (z, t, χ²) be part of 7b, or a later phase? *Proposed: later, if wanted.*
-11. Should data-set columns be usable in expressions, such as `mean` of a column in the Calc tab? *Proposed: after Phase 9, once lists exist.*
-12. Should slope fields and implicit curves work on log axes, or be hidden while log axes are on? *Proposed: implicit curves and inequalities work (they are computed on a screen grid); slope fields are hidden, with a note.*
+10. Which quartile method? *Proposed: the TI-84 method (medians of the lower and upper halves), named on the card.*
+11. Should hypothesis tests and confidence intervals (z, t, χ²) be part of 7b, or a later phase? *Proposed: later, if wanted.*
+12. Should data-set columns be usable in expressions, such as `mean` of a column in the Calc tab? *Proposed: after Phase 9, once lists exist.*
+13. Should slope fields and implicit curves work on log axes, or be hidden while log axes are on? *Proposed: implicit curves and inequalities work (they are computed on a screen grid); slope fields are hidden, with a note.*
 
 *Phase 8*
-13. Should the photo be kept in project files (downscaled), or never stored? *Proposed: never stored; only the points are kept. It keeps share links and files small and avoids passing on personal photos.*
-14. Is a “known length” mode needed for photos of real objects without axes (set an origin and one known distance, square pixels assumed)? *Proposed: yes, as a second calibration option.*
-15. Perspective correction (four corners of a known rectangle) for photos taken at an angle? *Proposed: not in Phase 8.*
+14. Should the photo be kept in project files (downscaled), or never stored? *Proposed: never stored; only the points are kept. It keeps share links and files small and avoids passing on personal photos.*
+15. Is a “known length” mode needed for photos of real objects without axes (set an origin and one known distance, square pixels assumed)? *Proposed: yes, as a second calibration option.*
+16. Perspective correction (four corners of a known rectangle) for photos taken at an angle? *Proposed: not in Phase 8.*
 
 *Phase 9*
-16. `sum` already means Σ with four arguments (D17). Should `sum(L)` with one argument total a list, or should there be a separate name such as `total`? *Proposed: overload by the number of arguments.*
-17. Explicit sequences such as `u(n) = 1/n` are ordinary functions today. How should a row say "plot as terms"? *Proposed: a per-row "Plot as sequence" toggle, switched on automatically for recursive rows.*
-18. Should the logistic-map bifurcation diagram (long-run values against a slider) be included as an extra? *Proposed: yes, if 9b has room.*
+17. `sum` already means Σ with four arguments (D17). Should `sum(L)` with one argument total a list, or should there be a separate name such as `total`? *Proposed: overload by the number of arguments.*
+18. Explicit sequences such as `u(n) = 1/n` are ordinary functions today. How should a row say "plot as terms"? *Proposed: a per-row "Plot as sequence" toggle, switched on automatically for recursive rows.*
+19. Should the logistic-map bifurcation diagram (long-run values against a slider) be included as an extra? *Proposed: yes, if 9b has room.*
+
+*Phase 10*
+20. Should typing `"` at the start of an empty row turn it into a note, as a shortcut beside the add menu? *Proposed: yes.*
+21. Should notes appear in the key of exported images? *Proposed: no; the key lists what is drawn.*
+22. Which examples go in the gallery? *Proposed: the candidates in section 7.1, adjusted once Phases 6–9 are built.*
