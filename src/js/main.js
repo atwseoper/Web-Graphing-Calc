@@ -18,9 +18,10 @@ import { createSettings } from './ui/settings.js';
 import { ICONS } from './ui/icons.js';
 import { debounce } from './ui/dom.js';
 import { createHistory, applySnapshot } from './state/history.js';
-import { decodeShare, openProject, shareValueFromHash } from './state/share.js';
+import { decodeShare, openProject, shareValueFromHash, projectSummary } from './state/share.js';
 import { createShareMenu } from './ui/share-menu.js';
 import { showToast } from './ui/toast.js';
+import { createShareConfirm } from './ui/share-confirm.js';
 import { setUpInstall } from './ui/install.js';
 import { setUpOffline } from './ui/offline.js';
 
@@ -166,21 +167,37 @@ const shareMenu = createShareMenu({
   popover: $('share-menu'), toggleBtn: $('btn-share'), store, graph, getAnalysis, getFits, onOpen: applyOpened,
 });
 
+// A shared link asks before it replaces anything (D47): the project is decoded and
+// checked, then the dialog shows a summary; only Open applies it. Project files the user
+// picks themselves open without asking.
+const shareConfirm = createShareConfirm({ backdrop: $('share-confirm') });
+let linkSeq = 0;
+
 async function openFromHash() {
   const value = shareValueFromHash(location.hash);
   if (!value) return;
-  // Take the project out of the address bar, so reloading doesn't open it again.
+  // Take the project out of the address bar, so reloading (or Cancel) doesn't leave it there.
   try {
     history.replaceState(null, '', location.pathname + location.search);
   } catch { /* file: URLs in some browsers */ }
+  const seq = ++linkSeq;
+  let json;
+  let checked;
   try {
-    const r = openProject(store.get(), await decodeShare(value));
-    if (r.error) throw new Error(r.error);
-    applyOpened(r.state, 'Opened a shared graph');
+    json = await decodeShare(value);
+    checked = openProject(store.get(), json);
+    if (checked.error) throw new Error(checked.error);
   } catch (err) {
+    if (seq !== linkSeq) return;
     const msg = err && err.message && /version|project/.test(err.message) ? err.message : 'This link is damaged or incomplete, so it couldn’t be opened.';
     showToast(msg, { ms: 9000 });
+    return;
   }
+  if (seq !== linkSeq) return; // a newer link arrived while this one was decoding
+  if (await shareConfirm.ask(projectSummary(checked.state)) !== 'open') return;
+  // Merge with the work as it is now (it may have changed while the dialog was open).
+  const r = openProject(store.get(), json);
+  if (r.state) applyOpened(r.state, 'Opened a shared graph');
 }
 window.addEventListener('hashchange', openFromHash);
 setUpInstall();

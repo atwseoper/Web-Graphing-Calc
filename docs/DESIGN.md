@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v1.0 – Phase 4 (polish and extras) complete; version 2 roadmap (Phases 5–10) planned · **Updated:** 18 November 2026
+**Status:** v1.0 – Phase 5 (offline app and safe sharing) complete; version 2 roadmap Phases 6–10 planned · **Updated:** 18 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -57,6 +57,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D47 | Shared links ask before opening. When the page opens with a `#g=…` link, or the link changes, the project is decoded and checked first; nothing replaces the current work until the user agrees. A dialog, “Open a shared project?”, says that the link holds graphs and data from someone else and should only be opened if the user trusts where it came from, and that it replaces what is on screen (undoable). It gives a factual summary (for example “4 graphs, 1 data set with 2 fits”), never text from the project itself. Open and Cancel buttons; Cancel has the focus, and Escape or tapping outside cancels. Cancel keeps the current work and clears the link from the address bar. Damaged links show the existing error with no dialog. Project files the user picks themselves, and the built-in examples (Phase 10), open without asking. The rule is to ask whenever a project could open without the user deliberately choosing it, so if the installed app ever opens project files directly (manifest file handling), those ask too. | 18 Nov 2026 |
 | D48 | Version 2 open questions settled (section 9, Q4–Q22). Changes to the plan: points whose coordinates are linked through sliders, such as `(a, 2a)`, are draggable in 6a; the summary card offers a choice of quartile method; slope fields work on log axes too; perspective correction joins Phase 8, because a general calibration mapping is simpler to build once than to rework later. Hypothesis tests and confidence intervals, data-set columns in expressions, and opening project files directly in the installed app are kept for later (section 7.2). | 18 Nov 2026 |
 | D49 | Phase 5a details. The worker's cache name is the build stamp plus a hash of the built page (`web-graphing-calc v1.0.0 abc1234 2026-11-18 <hash>`), so `sw.js` changes whenever the page does, even for two builds of one commit, and it only deletes caches with its own prefix (every github.io project shares one origin). It answers `./`, `./index.html` and `./graphcalc.html` (any query string) from the one saved copy. Besides the browser's own check on each launch, the page asks for an update when the app comes back to the foreground, at most hourly, so an app left open still hears about new versions. The “New version · Reload” toast is a lasting toast: it has no timer, and if a short toast (such as “Opened a shared graph · Undo”) takes its place, it comes back when that one goes. Closing it with × leaves the new version to start next time every window is closed. | 18 Nov 2026 |
+| D50 | Phase 5b details. The dialog's summary is worked out by parsing the rows only, never evaluating them, so a hostile link can't stall the page before the user agrees. Rows count as graphs (y/x/r = …, slope fields, implicit curves, inequalities, f(x) = …, parametric curves, expressions in x or θ), points (pairs without t) or “other rows” (variables, other functions, calculations, rows with errors); then data sets with their fits, and “Solve inputs” if any are filled in. Only counts appear (“2 graphs and 1 data set with 2 fits”), and a test checks that text from the project never does. The link leaves the address bar as soon as it is read. Open merges the project with the work as it is at that moment. A link that is still being decoded when a newer one arrives is dropped. | 18 Nov 2026 |
 
 ## 1. Purpose
 
@@ -180,8 +181,8 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra, **
 | Share via URL fragment; import/export JSON project | P2 | Easy | Done in Phase 4 (D35) |
 | Help panel with function reference | P2 | Easy | Done (D22) |
 | Add to Home screen (web app manifest) | P3 | Easy | Done in Phase 4 (D37) |
-| Offline start for the installed app, with background updates | v2 | Easy | Phase 5a (D45): service worker beside the page on Pages |
-| Confirmation before opening a shared link | v2 | Easy | Phase 5b (D47) |
+| Offline start for the installed app, with background updates | v2 | Easy | Done in Phase 5a (D45, D49): service worker beside the page on Pages |
+| Confirmation before opening a shared link | v2 | Easy | Done in Phase 5b (D47, D50) |
 | Notes rows (plain text) and folders | v2 | Moderate | Phase 10a: needs row reordering, which doesn't exist yet |
 | Gallery of built-in example projects | v2 | Easy | Phase 10b |
 
@@ -267,7 +268,7 @@ build/
 | 2 – Analysis & Solve ✅ | Roots, intersections, extrema, integrals, polar area, sliders, derivatives, conditions, Σ/Π, solver tab | Parity with a handheld |
 | 3 – Data & Fit ✅ | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
 | 4 – Polish & extras ✅ | Undo, sharing, project files, PNG export, home-screen install, θ sweep, slider play, pretty-printing, inequalities, implicit curves, slope fields, non-linear systems | Release |
-| 5 – Offline app & safe sharing | 5a service worker for offline start, background updates with a “New version · Reload” toast; 5b confirmation before opening a shared link | Installed app works with no signal; links can't silently replace work |
+| 5 – Offline app & safe sharing ✅ | 5a service worker for offline start, background updates with a “New version · Reload” toast; 5b confirmation before opening a shared link | Installed app works with no signal; links can't silently replace work |
 | 6 – Drag & calculus | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
 | 7 – Axes & statistics | 7a log and log-log axes; 7b summary statistics, histograms, box plots, distribution functions | Parity with a handheld's statistics |
 | 8 – Photo digitiser | Image import, axis calibration, tapping points into a data set | Real-world data straight into fitting |
@@ -278,7 +279,7 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 
 ### 7.1 Version 2 phases in detail
 
-**Phase 5 – Offline app and safe sharing (two PRs)**
+**Phase 5 – Offline app and safe sharing (two PRs) ✅**
 
 *5a Offline app*
 - `build.mjs` writes `dist/sw.js` from the template `src/sw.js`, with the build info and a hash of the page as the cache name (D49), so every deploy changes the file's bytes. `graphcalc.html` and `index.html` are otherwise unchanged and still self-contained.
@@ -291,8 +292,8 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 
 *5b Shared-link confirmation (D47)*
 - `openFromHash` in `main.js` decodes and checks the project as now, then shows the dialog instead of applying it straight away. Open applies it as one undoable step with the existing “Opened a shared graph” toast and Undo. Cancel leaves everything as it was.
-- The summary line comes from a pure function in `state/share.js` (counts of graphs, points, data sets and fits; Solve inputs mentioned only if present), so it is unit-tested. It never includes text from the project.
-- The dialog reuses the help dialog's modal pattern: focus trapped, Cancel focused first, Escape and the backdrop cancel, 44 px buttons, and it works with the keypad closed.
+- The summary line comes from a pure function in `state/share.js`, `projectSummary` (counts of graphs, points, other rows, data sets and fits; Solve inputs mentioned only if present), so it is unit-tested. It never includes text from the project, and it parses rows without evaluating them (D50).
+- The dialog (`ui/share-confirm.js`) reuses the help dialog's modal pattern: focus trapped, Cancel focused first, Escape and the backdrop cancel, 44 px buttons, and it works with the keypad closed.
 - A second link arriving while the dialog is open replaces the first in the dialog.
 
 **Phase 6 – Draggable points and visual calculus (two PRs)**

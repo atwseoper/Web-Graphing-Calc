@@ -7,6 +7,8 @@
 // The fragment never reaches a server. Browsers without CompressionStream write
 // `#g=j<base64url(json)>` instead, and every browser can read both.
 import { serialize, deserialize } from './persist.js';
+import { parse, isDyDx } from '../expr/parser.js';
+import { referencedNames } from '../expr/compile.js';
 
 export const SHARE_PARAM = 'g';
 export const MAX_LINK_CHARS = 8000; // longer links are unreliable in chat apps and some browsers
@@ -55,6 +57,66 @@ export function openProject(current, json) {
       ui: { ...current.ui, tab: p.ui.tab },
     },
   };
+}
+
+// ---- summary for the "Open a shared project?" dialog (D47) ---------------------------------
+// Counts only – never text from the project, which comes from someone else. Rows are
+// classified by parsing alone (no evaluation), so a hostile link can't stall the page
+// before the user has agreed to open it.
+
+const CURVE_LETTERS = new Set(['y', 'x', 'r']);
+
+function rowKind(text) {
+  if (!text.trim()) return null;
+  let ast;
+  try {
+    ast = parse(text, { graph: true });
+  } catch {
+    return 'other';
+  }
+  const uses = (node, letters) => [...referencedNames(node).names].some((n) => letters.includes(n));
+  if (ast.type === 'ineq') return 'graph';
+  if (ast.type === 'eq') {
+    const { lhs } = ast;
+    if (lhs.type === 'yprime' || isDyDx(lhs)) return 'graph'; // slope field
+    if (lhs.type === 'sym' && !lhs.parens) return CURVE_LETTERS.has(lhs.name) ? 'graph' : 'other'; // y = …, or a variable
+    if (lhs.type === 'apply') return lhs.args.length === 1 && lhs.args[0].type === 'sym' && lhs.args[0].name === 'x' ? 'graph' : 'other';
+    return 'graph'; // implicit curve
+  }
+  const e = ast.expr;
+  if (e.type === 'tuple' && e.items.length === 2) return uses(e, ['t']) ? 'graph' : 'point';
+  return uses(e, ['x', 'θ']) ? 'graph' : 'other';
+}
+
+const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+function listText(parts) {
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+// e.g. "4 graphs, 1 point, 1 data set with 2 fits and Solve inputs". Takes a state from
+// openProject.
+export function projectSummary(state) {
+  const n = { graph: 0, point: 0, other: 0 };
+  for (const row of state.rows) {
+    const k = rowKind(String(row.text || ''));
+    if (k) n[k]++;
+  }
+  const parts = [];
+  if (n.graph) parts.push(count(n.graph, 'graph'));
+  if (n.point) parts.push(count(n.point, 'point'));
+  if (n.other) parts.push(count(n.other, parts.length ? 'other row' : 'row'));
+  const sets = state.data ? state.data.sets : [];
+  if (sets.length) {
+    const fits = sets.reduce((t, s) => t + s.fits.length, 0);
+    parts.push(count(sets.length, 'data set') + (fits ? ` with ${count(fits, 'fit')}` : ''));
+  }
+  const sv = state.solve || {};
+  const solveUsed = [sv.equation, sv.polynomial, ...(sv.system || []), ...Object.values(sv.given || {})]
+    .some((v) => typeof v === 'string' && v.trim());
+  if (solveUsed) parts.push(parts.length ? 'Solve inputs' : 'Solve inputs only');
+  return parts.length ? listText(parts) : 'nothing (an empty project)';
 }
 
 // ---- base64url ----------------------------------------------------------------------------
