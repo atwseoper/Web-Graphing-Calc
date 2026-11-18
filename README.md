@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, and Phase 5 makes the installed app work offline. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, and Phase 5 makes the installed app work offline and has shared links ask before they open. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -16,7 +16,7 @@ Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphin
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems and non-linear systems
 - Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
 - Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
-- Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded; save and open project files; save the graph as a PNG with a key; install it on your phone's home screen or as a Windows app, where it starts with no connection and offers new versions with a “New version · Reload” message
+- Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded (opening one asks first); save and open project files; save the graph as a PNG with a key; install it on your phone's home screen or as a Windows app, where it starts with no connection and offers new versions with a “New version · Reload” message
 
 ## Development
 

@@ -67,6 +67,7 @@ function graphPage() {
     section('Share and save',
       ul(
         [b('Share a link'), ': the link holds your whole project (graphs, data and fits), so whoever opens it gets their own copy. Nothing is uploaded. Very large data sets don\'t fit in a link: save a project file instead.'],
+        ['Opening a shared link first asks ', b('Open a shared project?'), ', with a count of what it holds. Only open links from people you trust. Cancel keeps your own work; Open replaces it, and you can undo that.'],
         [b('Save image'), ': a PNG of the graph as it is on screen, with a key of what\'s drawn.'],
         [b('Save project file'), ' and ', b('Open project file'), ': everything as a .json file. Opening one replaces what\'s here, and you can undo it. You can also drop a project file onto the page.'],
         ['To keep the calculator on your phone\'s home screen, or as an app on a computer, open it from its web address and use your browser\'s ', b('Add to Home screen'), ' or ', b('Install app'), '. The installed app starts with no connection. When a new version is out, a ', b('New version · Reload'), ' message appears: tap Reload to switch (your work is kept).'],

@@ -4,7 +4,7 @@ import { defaultState, newRow, newFit } from '../src/js/state/defaults.js';
 import { newDataSet } from '../src/js/data/table.js';
 import {
   projectJson, openProject, encodeShare, decodeShare, shareLink, shareValueFromHash,
-  bytesToBase64url, base64urlToBytes, MAX_LINK_CHARS,
+  bytesToBase64url, base64urlToBytes, MAX_LINK_CHARS, projectSummary,
 } from '../src/js/state/share.js';
 
 function sample() {
@@ -98,4 +98,54 @@ test('share links: building, length limit and reading the hash', async () => {
   assert.equal(shareValueFromHash('#x=1&g=jQQ'), 'jQQ');
   assert.equal(shareValueFromHash('#nothing'), null);
   assert.equal(shareValueFromHash(''), null);
+});
+
+// ---- summary for the shared-project dialog (D47) ----------------------------------------------
+function withRows(texts, extra = {}) {
+  const s = defaultState();
+  return { ...s, rows: texts.map((t, i) => newRow(i + 1, '#2f6fed', t)), ...extra };
+}
+
+test('summary counts graphs, points and other rows by kind', () => {
+  const rows = [
+    'y = x^2', 'x^2', 'x = y^2', 'r = 1 + cos(θ)', '(cos(t), sin(t))', 'x^2 + y^2 = 9', 'y < x', '0 < y < x',
+    "y' = x - y", 'dy/dx = y', 'f(x) = x^3', 'sin(θ)', // 12 graphs
+    '(2, 3)', '(a, 2a)', // 2 points
+    'a = 2', 'g(u, v) = u v', '3 + 4', 'f(2)', 'y = = 2', // 5 other rows (incl. an error)
+    '', '   ', // empty rows don't count
+  ];
+  assert.equal(projectSummary(withRows(rows)), '12 graphs, 2 points and 5 other rows');
+  assert.equal(projectSummary(withRows(['y = x'])), '1 graph');
+  assert.equal(projectSummary(withRows(['a = 1', 'b = 2'])), '2 rows');
+  assert.equal(projectSummary(withRows(['(1, 2)', 'a = 1'])), '1 point and 1 other row');
+});
+
+test('summary lists data sets, fits and Solve inputs', () => {
+  const s = sample();
+  assert.equal(projectSummary(s), '1 graph, 1 other row, 1 data set with 1 fit and Solve inputs');
+  const two = { ...s, rows: [], solve: defaultState().solve, data: { ...s.data, sets: [s.data.sets[0], { ...s.data.sets[0], id: 30, fits: [] }] } };
+  assert.equal(projectSummary(two), '2 data sets with 1 fit');
+  const noFits = { ...two, data: { ...two.data, sets: [{ ...s.data.sets[0], fits: [] }] } };
+  assert.equal(projectSummary(noFits), '1 data set');
+  assert.equal(projectSummary(withRows([])), 'nothing (an empty project)');
+  const solveOnly = withRows([], { solve: { ...defaultState().solve, system: ['', 'x + y = 2'] } });
+  assert.equal(projectSummary(solveOnly), 'Solve inputs only');
+  const given = withRows([], { solve: { ...defaultState().solve, given: { a: '  ' } } });
+  assert.equal(projectSummary(given), 'nothing (an empty project)');
+});
+
+test('summary never contains text from the project', async () => {
+  const s = sample();
+  const evil = 'Visit evil.example NOW';
+  const state = {
+    ...s,
+    rows: [newRow(1, '#2f6fed', evil), newRow(2, '#e8590c', `y = x {${evil}}`)],
+    solve: { ...s.solve, equation: evil },
+    data: { ...s.data, sets: [{ ...s.data.sets[0], name: evil }] },
+  };
+  // Through a real link, as the page sees it.
+  const json = await decodeShare((await shareLink(state, 'https://x/#')).url.split('#g=')[1]);
+  const text = projectSummary(openProject(defaultState(), json).state);
+  assert.doesNotMatch(text, /evil|visit|now/i);
+  assert.match(text, /^[\w ,()]+$/);
 });
