@@ -5,6 +5,7 @@ import { newRow, nextColor, MAX_ODE_POINTS } from '../state/defaults.js';
 import { formatNumber } from '../expr/format.js';
 import { defaultDomain } from '../expr/model.js';
 import { niceStep } from '../plot/viewport.js';
+import { sliderRange, snapToStep, valueText } from '../expr/slider.js';
 import { integrate } from '../numerics/integrate.js';
 import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
 import { parse } from '../expr/parser.js';
@@ -154,9 +155,8 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       const e2 = els.get(id);
       if (!e2 || !e2.sliderName) return;
       const step = Number(range.step) || 0.1;
-      const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
-      const v = Number(Number(range.value).toFixed(decimals));
-      updateRow(id, { text: `${e2.sliderName} = ${v}` });
+      const v = snapToStep(Number(range.value), Number(range.min), step);
+      updateRow(id, { text: `${e2.sliderName} = ${valueText(v)}` });
     });
     range.addEventListener('pointerdown', () => stopPlaying(id));
     const playBtn = h('button', {
@@ -511,10 +511,8 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       p.pos += (p.dir * (hi - lo) * dt) / SLIDER_SWEEP_MS;
       if (p.pos >= hi) { p.pos = hi; p.dir = -1; }
       if (p.pos <= lo) { p.pos = lo; p.dir = 1; }
-      const snapped = Math.min(hi, Math.max(lo, lo + Math.round((p.pos - lo) / step) * step));
-      const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
-      const v = Number(snapped.toFixed(Math.min(decimals, 12)));
-      const text = `${el.sliderName} = ${v}`;
+      const v = Math.min(hi, Math.max(lo, snapToStep(p.pos, lo, step)));
+      const text = `${el.sliderName} = ${valueText(v)}`;
       const row = rowById(id);
       if (row && row.text !== text) updateRow(id, { text });
       p.raf = requestAnimationFrame(frame);
@@ -545,19 +543,16 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     }
     e.sliderName = r.name;
     const v = r.value;
-    let lo = fieldValue(analysis, row.sliderMin);
-    let hi = fieldValue(analysis, row.sliderMax);
-    const defLo = Math.min(-10, Math.floor(v));
-    const defHi = Math.max(10, Math.ceil(v));
-    if (lo === null) lo = Math.min(defLo, hi === null ? defLo : hi - 1);
-    if (hi === null) hi = Math.max(defHi, lo + 1);
-    if (!(hi > lo)) hi = lo + 1;
-    const autoStep = niceStep((hi - lo) / 200);
-    const userStep = fieldValue(analysis, row.sliderStep);
-    const step = userStep !== null && userStep > 0 && userStep <= hi - lo ? userStep : autoStep;
+    const {
+      lo, hi, step, autoStep, userStepOk, defLo, defHi,
+    } = sliderRange(v, {
+      min: fieldValue(analysis, row.sliderMin),
+      max: fieldValue(analysis, row.sliderMax),
+      step: fieldValue(analysis, row.sliderStep),
+    });
     e.sStep.placeholder = formatNumber(autoStep, 6);
     syncInput(e.sStep, row.sliderStep);
-    e.sStep.classList.toggle('is-invalid', !!row.sliderStep.trim() && step !== userStep);
+    e.sStep.classList.toggle('is-invalid', !!row.sliderStep.trim() && !userStepOk);
     renderPlayBtn(e, row.id);
     e.sMin.placeholder = formatNumber(Math.min(defLo, hi - 1), 6);
     e.sMax.placeholder = formatNumber(Math.max(defHi, lo + 1), 6);
@@ -739,5 +734,5 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     if (latest) render(latest.state, latest.analysis);
   }
 
-  return { render, refresh, insertRow, focusRow };
+  return { render, refresh, insertRow, focusRow, stopPlaying };
 }

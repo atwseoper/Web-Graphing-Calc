@@ -13,7 +13,7 @@
 //   'cartesian-x' x = g(y): { f }
 //   'polar'       r = f(θ): { f, domain: { min, max } }
 //   'parametric'  (x(t), y(t)): { fx, fy, domain: { min, max } }
-//   'point'       (a, b): { x, y }
+//   'point'       (a, b): { x, y, expr } (expr: the parsed pair, for dragging, Phase 6a)
 //   'implicit'    an equation in x and y not solved for either, x^2 + y^2 = 4:
 //                 { F(x, y) } with the curve where F = 0 (F = left − right)
 //   'inequality'  y < f(x), x ≥ g(y), or any chain of comparisons in x and y:
@@ -547,7 +547,7 @@ export function analyse(rows, settings = {}) {
       if (cx.uses || cy.uses) {
         return { kind: 'parametric', fx: unary(cx.fn), fy: unary(cy.fn), ...domainOf(row) };
       }
-      return { kind: 'point', x: cx.fn([0]), y: cy.fn([0]) };
+      return { kind: 'point', x: cx.fn([0]), y: cy.fn([0]), expr };
     }
 
     const { fn, uses } = compileWith(expr, 'x', (n, where) => {
@@ -665,8 +665,32 @@ export function analyse(rows, settings = {}) {
     return `${angle}|${parts.join('\u0000')}`;
   }
 
+  // Every name the definition of `name` uses, directly or through other definitions
+  // (function parameters excluded), or null if `name` isn't defined.
+  function dependencies(name) {
+    if (!defs.has(name)) return null;
+    const seen = new Set();
+    const todo = [name];
+    while (todo.length) {
+      const def = defs.get(todo.pop());
+      if (!def) continue;
+      for (const d of [def, ...(def.others || [])]) {
+        const own = new Set(d.kind === 'function' ? d.params.map((p) => p.name) : []);
+        const refs = referencedNames(d.body);
+        for (const m of [...refs.names, ...refs.calls]) {
+          if (own.has(m) && !refs.calls.has(m)) continue;
+          if (!seen.has(m)) {
+            seen.add(m);
+            todo.push(m);
+          }
+        }
+      }
+    }
+    return seen;
+  }
+
   return {
-    rows: results, angle, evaluate, unknownsOf, compileIn, derivativeAst, dependencyKey,
+    rows: results, angle, evaluate, unknownsOf, compileIn, derivativeAst, dependencyKey, dependencies,
     isDefined: (name) => defs.has(name),
     functionDef: deriveEnv.func,
   };
