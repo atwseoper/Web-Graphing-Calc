@@ -314,3 +314,46 @@ test('symbol shortcuts: theta, pi, <= and >= as typed', async () => {
   const words = analyse([{ text: 'cos(pi/3)' }, { text: 'cos(π/3)' }]).rows;
   assert.equal(words[0].value, words[1].value);
 });
+
+test('graph inequalities may start or end with a function written without brackets', () => {
+  for (const s of ['sin x < y', 'cos x >= y', 'x^2 + sqrt y <= 4', 'sin x < y < 2', 'y > sin x']) {
+    assert.equal(parse(s, { graph: true }).type, 'ineq', s);
+  }
+  const rows = analyse([{ text: 'sin x < y' }]).rows;
+  assert.equal(rows[0].kind, 'inequality');
+  assert.equal(rows[0].form, 'y');
+  assert.equal(rows[0].above, true);
+  assert.equal(rows[0].f(Math.PI / 2), 1);
+  // A comparison inside brackets is still not allowed, and outside the Graph tab never is.
+  assert.throws(() => parse('sin(x < 1)', { graph: true }), /comparison/);
+  assert.throws(() => parse('sin x < 1'), /only be graphed/);
+  assert.equal(parse('{sin x < 0: 1, 2}').type, 'expr');
+});
+
+test('no slider is offered for a graph letter (x, y, r, θ, t)', () => {
+  const rows = analyse([
+    { text: 'f(x) = x + y' }, { text: 'g(x) = r x' }, { text: 'h(t) = t + θ' }, { text: 'y = x + r' },
+  ]).rows;
+  for (const r of rows) {
+    assert.equal(r.kind, 'error');
+    assert.equal(r.error.missing, undefined, r.error.message);
+  }
+  assert.match(rows[0].error.message, /'y' isn't a parameter of f.*f\(x, y\)/);
+  assert.match(rows[1].error.message, /g\(x, r\)/);
+  assert.match(rows[3].error.message, /polar/);
+  // Ordinary letters still get sliders, the graph letter's message comes once they exist.
+  const mixed = analyse([{ text: 'f(x) = a x + y' }]).rows[0];
+  assert.deepEqual(mixed.error.missing, ['a']);
+});
+
+test('dependencyKey changes only with the definitions an expression uses', () => {
+  const key = (rows, text = 'a x + g(x)') => analyse(rows).dependencyKey(text);
+  const base = [{ text: 'a = 2' }, { text: 'g(x) = b x' }, { text: 'b = 3' }, { text: 'c = 4' }, { text: 'y = sin x' }];
+  const k0 = key(base);
+  assert.equal(key(base.map((r, i) => (i === 4 ? { text: 'y = cos x' } : r))), k0); // unrelated graph
+  assert.equal(key(base.map((r, i) => (i === 3 ? { text: 'c = 5' } : r))), k0); // unused variable
+  assert.notEqual(key(base.map((r, i) => (i === 2 ? { text: 'b = 5' } : r))), k0); // used through g
+  assert.notEqual(key(base, 'a x + g(x) + c'), k0);
+  assert.notEqual(analyse(base, { angle: 'deg' }).dependencyKey('a x + g(x)'), k0);
+  assert.notEqual(key([...base, { text: 'd = 1' }], 'd x'), key(base, 'd x')); // newly defined
+});

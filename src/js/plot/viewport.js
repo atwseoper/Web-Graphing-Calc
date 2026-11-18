@@ -88,7 +88,9 @@ export function formatTick(value, step) {
   if (Math.abs(value) < step * 1e-9) return '0';
   const abs = Math.abs(value);
   if (abs >= 1e6 || abs < 1e-4) {
-    const digits = Math.max(0, Math.min(6, Math.ceil(Math.log10(abs / step)) - 1));
+    // Decimals in the mantissa: as many as the step's leading digit sits below the
+    // value's (1.2e6 with step 2e5 needs one: 1.2e6, not 1e6).
+    const digits = Math.max(0, Math.min(6, Math.floor(Math.log10(abs) + 1e-12) - Math.floor(Math.log10(step) + 1e-12)));
     return value.toExponential(digits).replace('e+', 'e').replaceAll('-', '−');
   }
   const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-12));

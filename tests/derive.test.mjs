@@ -146,3 +146,12 @@ test('fixes: unknown multi-letter functions and missing names', () => {
   assert.equal(s.rows[0].slider, true);
   assert.equal(s.rows[1].slider, false);
 });
+
+test('inlining a function renames a counting letter that the argument uses', () => {
+  const an = analyse([{ text: 'f(x) = sum(k x, k, 1, 3)' }]);
+  const d = an.derivativeAst(parse('f(k)').expr, 'k');
+  assert.equal(an.compileIn(d, ['k'])([2]), 6);
+  assert.equal(an.compileIn(parse('f(k)').expr, ['k'])([2]), 12);
+  // No renaming when nothing is captured.
+  assert.equal(toText(an.derivativeAst(parse('f(t)').expr, 't')), 'sum(k, k, 1, 3)');
+});

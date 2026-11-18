@@ -206,17 +206,32 @@ export function substitute(node, map) {
     case 'series': {
       const inner = { ...map };
       delete inner[node.index];
-      return { ...node, from: substitute(node.from, map), to: substitute(node.to, map), body: substitute(node.body, inner) };
+      const [index, body] = avoidCapture(node.index, node.body, inner);
+      return { ...node, index, from: substitute(node.from, map), to: substitute(node.to, map), body: substitute(body, inner) };
     }
     case 'nderiv': {
       // d/dv expr, evaluated at v = at. The expression keeps its own v; only `at`
       // and the other names are substituted.
       const inner = { ...map };
       delete inner[node.v];
-      return { ...node, expr: substitute(node.expr, inner), at: substitute(node.at ?? sym(node.v), map) };
+      const [v, expr] = avoidCapture(node.v, node.expr, inner);
+      return { ...node, v, expr: substitute(expr, inner), at: substitute(node.at ?? sym(node.v), map) };
     }
     default: return node;
   }
+}
+
+// A bound letter (sum's counting letter, d/dv's v) that a substituted value mentions
+// would capture it: f(x) = sum(k x, k, 1, 3) called as f(k) must not become sum(k·k, …).
+// Rename the bound letter first. Returns [name, body].
+function avoidCapture(bound, body, map) {
+  const captured = Object.entries(map).some(([name, value]) => dependsOn(body, name) && dependsOn(value, bound));
+  if (!captured) return [bound, body];
+  const values = Object.values(map);
+  let k = 1;
+  let fresh = `${bound}_${k}`;
+  while (dependsOn(body, fresh) || values.some((v) => dependsOn(v, fresh))) fresh = `${bound}_${++k}`;
+  return [fresh, substitute(body, { [bound]: sym(fresh) })];
 }
 
 // Inline a user-function call: f(u) -> body with the parameter replaced by u.

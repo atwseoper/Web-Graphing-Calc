@@ -113,7 +113,11 @@ export function solveEquation(analysis, text, options = {}) {
     return { ...base, ...fail(e) };
   }
   const auto = from === null && to === null;
-  const ranges = auto ? AUTO_RANGES : [[from ?? -10, to ?? 10]];
+  // Only one end given: the other is the usual ±10, or 20 beyond the given end when that
+  // would leave nothing to search.
+  const lo = from ?? (to > -10 ? -10 : to - 20);
+  const hi = to ?? (from < 10 ? 10 : from + 20);
+  const ranges = auto ? AUTO_RANGES : [[lo, hi]];
   if (!auto && !(ranges[0][1] > ranges[0][0])) {
     return { ...base, error: { message: "The search range is empty: 'to' must be greater than 'from'", start: -1, end: -1 } };
   }
@@ -205,6 +209,18 @@ export function solvePolynomial(analysis, text) {
 
 // ---- linear systems ----------------------------------------------------------------------------
 
+// The unknowns of a system in the order they are reported and graphed: x first and y
+// second when they are used, so "Show on graph" keeps them on their own axes; with two
+// unknowns where only y is one of them, y stays on the vertical axis. Others keep the
+// order they first appear in.
+export function orderUnknowns(names) {
+  const rest = names.filter((n) => n !== 'x' && n !== 'y');
+  const hasX = names.includes('x');
+  const hasY = names.includes('y');
+  if (hasY && !hasX && names.length === 2) return [...rest, 'y'];
+  return [...(hasX ? ['x'] : []), ...(hasY ? ['y'] : []), ...rest];
+}
+
 // texts: one equation per entry (blank entries are ignored).
 // Returns { error, index? } or { unknowns, status: 'unique'|'none'|'infinite',
 //   values?, residual?, relations?, nearlySingular?, graph, frame }.
@@ -219,8 +235,9 @@ export function solveSystem(analysis, texts) {
       return { ...fail(e), index };
     }
   }
-  const unknowns = [];
-  for (const e of eqs) for (const n of analysis.unknownsOf(e.g)) if (!unknowns.includes(n)) unknowns.push(n);
+  const found = [];
+  for (const e of eqs) for (const n of analysis.unknownsOf(e.g)) if (!found.includes(n)) found.push(n);
+  const unknowns = orderUnknowns(found);
   if (!unknowns.length) return { error: { message: 'There are no unknowns – every name already has a value', start: -1, end: -1 } };
   if (unknowns.length > MAX_UNKNOWNS) return { error: { message: `Too many unknowns (at most ${MAX_UNKNOWNS})`, start: -1, end: -1 } };
 

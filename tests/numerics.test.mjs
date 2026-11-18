@@ -180,3 +180,17 @@ test('toPolynomial: expansion and refusal', () => {
   });
   assert.deepEqual(withFn, [1, 4, 4]); // (2x + 1) + (4x² + 2x)
 });
+
+import { sinExact, cosExact, tanExact } from '../src/js/numerics/special.js';
+
+test('exact trig zeros never swallow real values at large x', () => {
+  assert.equal(sinExact(Math.PI), 0);
+  assert.equal(sinExact(1e6 * Math.PI), 0);
+  assert.equal(cosExact(Math.PI / 2), 0);
+  assert.equal(sinExact(1e-20), 1e-20);
+  for (const x of [1e15 + 0.5, 2e14 + 1, 7e16]) {
+    assert.equal(sinExact(x), Math.sin(x));
+    assert.equal(cosExact(x), Math.cos(x));
+    assert.equal(tanExact(x), Math.tan(x));
+  }
+});

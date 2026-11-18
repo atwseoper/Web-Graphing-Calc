@@ -119,3 +119,46 @@ test('polynomialText and solve state persistence', () => {
   const fromOld = deserialize(JSON.stringify(old));
   assert.equal(fromOld.solve.mode, 'equation');
 });
+
+test('solvePolynomial: terms that cancel in floating point are dropped', () => {
+  const r = solvePolynomial(A, '0.1x^2 + 0.2x^2 = 0.3x^2 + x');
+  assert.equal(r.degree, 1);
+  assert.deepEqual(r.roots.map((z) => z.re), [0]);
+  const cubic = solvePolynomial(A, '(x + 0.1)^3 - x^3');
+  assert.equal(cubic.degree, 2);
+  const none = solvePolynomial(A, '0.1x + 0.2x - 0.3x = 1');
+  assert.match(none.error.message, /no solution/i);
+  assert.match(solvePolynomial(A, 'x/0 = 1').error.message, /Division by zero/);
+  // A genuinely tiny leading coefficient is kept.
+  assert.equal(solvePolynomial(A, '1e-20 x^2 + x - 1').degree, 2);
+});
+
+test('solveSystem keeps x and y on their own axes for "Show on graph"', () => {
+  const lin = solveSystem(A, ['y = 2x + 1', 'x + y = 4']);
+  assert.deepEqual(lin.unknowns, ['x', 'y']);
+  assert.ok(close(lin.values[0], 1) && close(lin.values[1], 3));
+  assert.equal(lin.renamed, undefined);
+  assert.deepEqual(lin.graph, ['y = 2x + 1', 'y = -x + 4', '(1, 3)']);
+
+  const non = solveSystem(A, ['y = x^2 - 1', 'x^2 + y^2 = 4']);
+  assert.deepEqual(non.unknowns, ['x', 'y']);
+  assert.equal(non.renamed, undefined);
+  assert.equal(non.graph[0], 'y = x^2 - 1');
+  assert.deepEqual(non.graph.slice(2), ['(-1.51748991355, 1.30277563773)', '(1.51748991355, 1.30277563773)']);
+
+  // Only y and another letter: y stays vertical.
+  const ay = solveSystem(A, ['y = 2a', 'a + y = 3']);
+  assert.deepEqual(ay.unknowns, ['a', 'y']);
+  assert.deepEqual(ay.renamed, { a: 'x', y: 'y' });
+});
+
+test('solveEquation: a range with only one end given', () => {
+  const from = solveEquation(A, 'x^2 = 400', { from: '15' });
+  assert.equal(from.error, undefined);
+  assert.deepEqual(from.range, [15, 35]);
+  assert.deepEqual(from.roots.map((z) => z.x), [20]);
+  const to = solveEquation(A, 'x^2 = 400', { to: '-15' });
+  assert.deepEqual(to.range, [-35, -15]);
+  assert.deepEqual(solveEquation(A, 'x = 1', { from: '-3' }).range, [-3, 10]);
+  assert.match(solveEquation(A, 'x = 1', { from: '5', to: '2' }).error.message, /empty/);
+});
