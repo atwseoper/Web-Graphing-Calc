@@ -22,6 +22,7 @@ import { decodeShare, openProject, shareValueFromHash } from './state/share.js';
 import { createShareMenu } from './ui/share-menu.js';
 import { showToast } from './ui/toast.js';
 import { setUpInstall } from './ui/install.js';
+import { setUpOffline } from './ui/offline.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -110,7 +111,8 @@ const calc = createCalcPanel({
 });
 
 const buildMeta = document.querySelector('meta[name="build-info"]');
-const buildInfo = buildMeta && !buildMeta.content.startsWith('__') ? buildMeta.content : 'development build';
+const isBuilt = !!buildMeta && !buildMeta.content.startsWith('__');
+const buildInfo = isBuilt ? buildMeta.content : 'development build';
 const settings = createSettings({ popover: $('settings'), toggleBtn: $('btn-settings'), store, buildInfo });
 
 // ---- undo / redo --------------------------------------------------------------------------
@@ -182,6 +184,7 @@ async function openFromHash() {
 }
 window.addEventListener('hashchange', openFromHash);
 setUpInstall();
+setUpOffline({ isBuilt, beforeReload: () => storage && persist.flush() });
 
 const panel = $('panel');
 createSheet({ panel, handle: $('sheet-handle') });

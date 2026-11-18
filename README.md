@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: version 1.0. All four planned phases are complete: graphing, analysis and solving, data and curve fitting, and polish and extras. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, and Phase 5 makes the installed app work offline. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -16,7 +16,7 @@ Status: version 1.0. All four planned phases are complete: graphing, analysis an
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems and non-linear systems
 - Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
 - Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
-- Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded; save and open project files; save the graph as a PNG with a key; add it to your phone's home screen
+- Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded; save and open project files; save the graph as a PNG with a key; install it on your phone's home screen or as a Windows app, where it starts with no connection and offers new versions with a “New version · Reload” message
 
 ## Development
 
@@ -25,7 +25,7 @@ Requires Node.js 20 or later. There are no npm dependencies.
 ```sh
 npm run dev       # serve src/ unbundled at http://localhost:5173
 npm test          # run unit tests (Node's built-in test runner)
-npm run build     # produce dist/graphcalc.html (single self-contained file)
+npm run build     # produce dist/graphcalc.html (single self-contained file) and dist/sw.js
 npm run preview   # build, then serve dist/
 ```
 
@@ -39,6 +39,8 @@ tests/          unit tests for pure (DOM-free) modules
 build/          zero-dependency bundler, build script and dev server
 docs/           design document
 ```
+
+`src/sw.js` is the one file outside the single page: a tiny service worker (not bundled) that the Pages site serves beside the page so the installed app starts offline. The build stamps it with the build info and a hash of the page. `graphcalc.html` works the same without it, and skips it when opened from disk or from the dev server.
 
 The build uses a small in-house bundler (`build/bundle.mjs`) that supports only a restricted subset of ES module syntax. The rules are listed at the top of that file.
 

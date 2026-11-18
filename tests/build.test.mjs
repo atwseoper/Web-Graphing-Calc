@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { build } from '../build/build.mjs';
 
 test('build produces a single self-contained HTML file', () => {
@@ -18,4 +18,15 @@ test('build produces a single self-contained HTML file', () => {
   for (const url of urls) {
     assert.match(url, /^https:\/\/(github\.com\/atwseoper|polyformproject\.org|atwseoper\.github\.io\/Web-Graphing-Calc)(\/|$)/, `unexpected URL ${url}`);
   }
+});
+
+test('build writes the service worker beside the page (D45)', () => {
+  const { cacheName } = build();
+  const sw = new URL('../dist/sw.js', import.meta.url);
+  assert.ok(existsSync(sw), 'dist/sw.js exists');
+  assert.ok(readFileSync(sw, 'utf8').includes(cacheName), 'sw.js carries the build stamp');
+  const html = readFileSync(new URL('../dist/graphcalc.html', import.meta.url), 'utf8');
+  // The page refers to the worker only by its relative name, and only to register it.
+  assert.deepEqual(html.match(/['"`][^'"`\n]*sw\.js['"`]/g), ["'./sw.js'"]);
+  assert.match(html, /\.register\('\.\/sw\.js'\)/);
 });
