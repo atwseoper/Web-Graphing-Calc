@@ -1,5 +1,6 @@
 // Saving and restoring state. serialize/deserialize are pure; load/save take a
 // Storage-like object (localStorage in the browser) so they can be tested.
+import { RIEMANN_METHODS } from '../numerics/riemann.js';
 import {
   defaultState, defaultSolve, defaultData, newRow, newFit, FIT_MODELS, PALETTE, STATE_VERSION, MAX_ODE_POINTS,
 } from './defaults.js';
@@ -73,6 +74,13 @@ export function deserialize(json) {
       row.atX = str(r.atX);
       row.intFrom = str(r.intFrom);
       row.intTo = str(r.intTo);
+      row.riemann = RIEMANN_METHODS.includes(r.riemann) ? r.riemann : '';
+      row.riemannN = str(r.riemannN);
+      row.taylor = bool(r.taylor);
+      row.taylorN = str(r.taylorN);
+      row.taylorAt = str(r.taylorAt);
+      row.secant = bool(r.secant);
+      row.secantH = str(r.secantH);
       if (Array.isArray(r.odePoints)) {
         row.odePoints = r.odePoints
           .filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null)

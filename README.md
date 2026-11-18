@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, and Phase 5 makes the installed app work offline and has shared links ask before they open. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, Phase 5 makes the installed app work offline and has shared links ask before they open, and Phase 6 adds draggable points, Riemann sums, Taylor polynomials and secant → tangent. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 

@@ -14,6 +14,10 @@ export function newRow(id, color, text = '') {
     showTable: false, tableStart: '', tableStep: '',
     sliderMin: '', sliderMax: '', sliderStep: '',
     showAnalysis: false, showDeriv: false, atX: '', intFrom: '', intTo: '',
+    // Visual calculus (Phase 6b): Riemann sums ('' = off, or 'left' | 'right' | 'mid' |
+    // 'trap') with n rectangles, a Taylor polynomial of a degree about a point, and a
+    // secant through x and x + h.
+    riemann: '', riemannN: '', taylor: false, taylorN: '', taylorAt: '', secant: false, secantH: '',
     odePoints: [], // [[x, y], …]: starting points of solution curves (slope fields)
   };
 }

@@ -20,6 +20,7 @@ import { formatCoordinate, formatNumber } from '../expr/format.js';
 import { pointsOfInterest } from '../numerics/analysis.js';
 import { contour, regionRects, snapToCurve } from '../plot/implicit.js';
 import { solutionThrough } from '../numerics/ode.js';
+import { riemannOf, taylorOf, secantOf } from '../expr/calculus.js';
 
 const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope']);
 const REGION_ALPHA = 0.16;
@@ -47,7 +48,9 @@ export function fieldValue(analysis, text) {
   return !r.error && Number.isFinite(r.value) ? r.value : null;
 }
 
-export function createGraphView({ canvas, store, getAnalysis, getFits = () => [], pointDrag = null }) {
+export function createGraphView({
+  canvas, store, getAnalysis, getFits = () => [], pointDrag = null, secantPlayer = null,
+}) {
   let ctx = canvas.getContext('2d'); // swapped for an off-screen canvas by renderImage()
   let renderScale = 0; // pixels per CSS px when rendering an image (0 = the screen's)
   let vp = null;
@@ -508,6 +511,12 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     const a = fieldValue(analysis, row.intFrom);
     const b = fieldValue(analysis, row.intTo);
     if (isFunctionOfX(r)) {
+      // A Riemann sum replaces the smooth shading with its rectangles (Phase 6b).
+      const rs = row.riemann ? riemannOf(row, r, analysis) : null;
+      if (rs && rs.res && rs.res.ok) {
+        drawRiemann(rs, row.color);
+        return;
+      }
       if (a === null || b === null || a === b) return;
       const { xMin, xMax } = worldBounds(vp);
       const pad = 2 / vp.scaleX;
@@ -529,7 +538,88 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     }
   }
 
+  // Rectangles (or trapezia) between the axis and the curve, with the points each
+  // height was taken at.
+  function drawRiemann(rs, color) {
+    const { edges, heights } = rs.res;
+    const LIM = 20000;
+    const cl = (v) => Math.max(-LIM, Math.min(LIM, v));
+    const base = cl(toScreen(vp, 0, 0)[1]);
+    const X = (x) => cl(toScreen(vp, x, 0)[0]);
+    const Y = (y) => cl(toScreen(vp, 0, y)[1]);
+    ctx.save();
+    ctx.beginPath();
+    const dots = [];
+    for (let k = 0; k < edges.length - 1; k++) {
+      const x0 = X(edges[k]);
+      const x1 = X(edges[k + 1]);
+      if (Math.max(x0, x1) < -2 || Math.min(x0, x1) > vp.width + 2) continue;
+      if (rs.method === 'trap') {
+        ctx.moveTo(x0, base);
+        ctx.lineTo(x0, Y(heights[k]));
+        ctx.lineTo(x1, Y(heights[k + 1]));
+        ctx.lineTo(x1, base);
+        ctx.closePath();
+      } else {
+        const y = Y(heights[k]);
+        ctx.rect(Math.min(x0, x1), Math.min(y, base), Math.abs(x1 - x0), Math.abs(base - y));
+        const xs = rs.method === 'left' ? edges[k] : rs.method === 'right' ? edges[k + 1] : (edges[k] + edges[k + 1]) / 2;
+        dots.push([X(xs), y]);
+      }
+    }
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.16;
+    ctx.fill();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Sample points, when the rectangles are wide enough to show them.
+    if (dots.length && Math.abs(X(edges[1]) - X(edges[0])) >= 6) {
+      ctx.beginPath();
+      for (const [x, y] of dots) {
+        ctx.moveTo(x + 2.5, y);
+        ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // A straight line through (x0, y0) with gradient m, across the view.
+  function fullLine(x0, y0, m, color, width, opts) {
+    const { xMin, xMax } = worldBounds(vp);
+    const p0 = toScreen(vp, xMin, y0 + m * (xMin - x0));
+    const p1 = toScreen(vp, xMax, y0 + m * (xMax - x0));
+    drawLines(ctx, [{ x: [p0[0], p1[0]], y: [p0[1], p1[1]] }], color, width, opts);
+  }
+
+  // Taylor polynomial (dashed) and secant → tangent (Phase 6b).
+  function drawCalculus(row, r, analysis) {
+    const tp = row.taylor ? taylorOf(row, r, analysis) : null;
+    if (tp && tp.f) {
+      drawLines(ctx, sampleCartesian(tp.f, vp), row.color, 2.25, { dash: [11, 6], alpha: 0.95 });
+      const y0 = r.f(tp.x0);
+      if (Number.isFinite(y0)) {
+        const [sx, sy] = toScreen(vp, tp.x0, y0);
+        drawPoi(ctx, sx, sy, row.color, colors);
+      }
+    }
+    const sc = row.secant ? secantOf(row, r, analysis, secantPlayer ? secantPlayer.value(row.id) : null) : null;
+    if (sc && sc.ok) {
+      // The tangent it approaches (drawn by the At x overlay when x comes from there).
+      if (!sc.fromAtX && Number.isFinite(sc.slope)) fullLine(sc.x0, sc.y0, sc.slope, row.color, 1.5, { alpha: 0.45 });
+      if (Number.isFinite(sc.m)) fullLine(sc.x0, sc.y0, sc.m, row.color, 2, { dash: [4, 4], alpha: 0.95 });
+      for (const [x, y] of [[sc.x0, sc.y0], [sc.x0 + sc.h, sc.y1]]) {
+        const [sx, sy] = toScreen(vp, x, y);
+        drawPoi(ctx, sx, sy, row.color, colors, true);
+      }
+    }
+  }
+
   function drawOverlays(row, r, analysis) {
+    drawCalculus(row, r, analysis);
     const d = row.showDeriv || row.atX ? r.derivative() : null;
     if (row.showDeriv && d) {
       drawLines(ctx, sampleCartesian(d.f, vp), row.color, 2, { dash: [7, 6], alpha: 0.85 });
