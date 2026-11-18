@@ -97,11 +97,17 @@ export function realPow(a, b) {
 
 const HALF_PI = Math.PI / 2;
 
-// Distance of x from the nearest multiple of `period` (offset by `phase`), relative to |x|.
+// Is x a rounding error away from a multiple of `period` (offset by `phase`)? The window
+// grows with |x| (x itself is rounded), but never past SNAP_MAX: for huge x it would
+// otherwise cover the whole period and turn every value of sin x into 0.
+// Beyond SNAP_LIMIT, x − k·period can't be computed accurately enough to tell.
+const SNAP_MAX = 1e-6;
+const SNAP_LIMIT = 1e9;
 function nearMultiple(x, period, phase) {
+  if (!(Math.abs(x) < SNAP_LIMIT)) return false;
   const k = Math.round((x - phase) / period);
   if (k === 0 && phase === 0) return false; // sin(tiny) is tiny, not zero
-  return Math.abs(x - phase - k * period) <= 4e-16 * Math.max(1, Math.abs(x)) * 8;
+  return Math.abs(x - phase - k * period) <= Math.min(SNAP_MAX, 4e-16 * Math.max(1, Math.abs(x)) * 8);
 }
 
 // Trig with exact zeros at multiples of π (and π/2 for cos), so sin(π) shows as 0.

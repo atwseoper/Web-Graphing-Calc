@@ -233,7 +233,7 @@ class Parser {
           const q = this.peek();
           throw new ExprError(`Derivatives work on your own functions: define f(x) = ${t.value}(x), then use f'(x)`, t.start, q.end);
         }
-        return this.nested(() => this.functionCall(t));
+        return this.functionCall(t); // only its brackets, if any, count as nesting
       }
       let primes = 0;
       let primeEnd = t.end;
@@ -392,7 +392,7 @@ class Parser {
     let end;
     if (this.isOp('(')) {
       const open = this.next();
-      args = this.argList(open);
+      args = this.nested(() => this.argList(open));
       end = this.tokens[this.pos - 1].end;
     } else {
       const t = this.peek();
@@ -435,7 +435,7 @@ class Parser {
     }
     if (t.type === 'op' && t.value === '(') {
       this.next();
-      return this.parenthesised(t);
+      return this.nested(() => this.parenthesised(t));
     }
     if (t.type === 'name' && !isCallable(t.value)) {
       this.next();

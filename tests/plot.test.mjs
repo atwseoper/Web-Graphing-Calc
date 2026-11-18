@@ -154,3 +154,15 @@ test('nearestOnLines finds the closest point and interpolates t', () => {
   assert.equal(h.t, 0.25);
   assert.equal(nearestOnLines([], 0, 0), null);
 });
+
+test('formatTick shows enough digits to tell large and small ticks apart', () => {
+  assert.deepEqual([1e6, 1.2e6, 1.4e6, 1.6e6, 1.8e6, 2e6].map((v) => formatTick(v, 2e5)),
+    ['1.0e6', '1.2e6', '1.4e6', '1.6e6', '1.8e6', '2.0e6']);
+  assert.deepEqual([1e6, 1.5e6, 2e6, 2.5e6].map((v) => formatTick(v, 5e5)), ['1.0e6', '1.5e6', '2.0e6', '2.5e6']);
+  assert.deepEqual([1.1e7, 1.2e7].map((v) => formatTick(v, 1e6)), ['1.1e7', '1.2e7']);
+  assert.deepEqual([1.2e-5, 1.4e-5, 2e-5].map((v) => formatTick(v, 2e-6)), ['1.2e−5', '1.4e−5', '2.0e−5']);
+  assert.equal(formatTick(-1.5e6, 5e5), '−1.5e6');
+  // Labels on one axis are all different.
+  const labels = ticks(1e6, 3e6, 2e5).map((v) => formatTick(v, 2e5));
+  assert.equal(new Set(labels).size, labels.length);
+});

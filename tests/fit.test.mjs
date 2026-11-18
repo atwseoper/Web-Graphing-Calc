@@ -285,3 +285,32 @@ test('runFit: power model leaves out x ≤ 0; bands come from meanVar', () => {
   assert.match(r.notes.join(' '), /2 points left out/);
   assert.ok(r.meanVar(2.5) > 0 && Number.isFinite(r.meanVar(2.5)));
 });
+
+import { createFitCache } from '../src/js/fit/cache.js';
+
+test('fit cache: custom fits re-run only when a definition they use changes', () => {
+  let runs = 0;
+  const cache = createFitCache((...args) => { runs++; return runFit(...args); });
+  const points = Array.from({ length: 30 }, (_, i) => ({ x: i / 3, y: 3 * Math.exp(-0.4 * i / 3) + 1, s: null, off: false }));
+  const fit = newFit(2, '#000000', 'custom', { custom: 'y = a e^(-b x) + c + k' });
+  const line = newFit(3, '#000000', 'line');
+  const set = newDataSet(1, '#000000', 'D', points, { fits: [fit, line] });
+  const state = { data: { sets: [set] } };
+  const rows = (k, other) => [{ text: `k = ${k}` }, { text: other }, { text: 'm = 1' }];
+
+  cache.all(state, analyse(rows(0, 'y')));
+  assert.equal(runs, 2);
+  // Typing in an unrelated row (a new analysis each time) doesn't refit.
+  for (const t of ['y =', 'y = s', 'y = sin(x)']) cache.all(state, analyse(rows(0, t)));
+  assert.equal(runs, 2);
+  // Nor does an unused variable.
+  cache.all(state, analyse([...rows(0, 'y'), { text: 'n = 2' }]));
+  assert.equal(runs, 2);
+  // A definition the custom model uses refits it (but not the line).
+  const r = cache.result(set, fit, analyse(rows(0.5, 'y')));
+  assert.equal(runs, 3);
+  assert.ok(Math.abs(r.values[2] - 0.5) < 1e-6); // c absorbs k
+  // The angle unit refits both.
+  cache.all(state, analyse(rows(0.5, 'y'), { angle: 'deg' }));
+  assert.equal(runs, 5);
+});

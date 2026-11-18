@@ -34,6 +34,7 @@ import { isConstantName, isFunctionName } from './builtins.js';
 export const PLOT_VARS = new Set(['x', 'y', 'r', 'θ', 't']);
 
 const HINTS = {
+  r: 'r is used in polar graphs: write r = …',
   'θ': 'θ is used in polar graphs: write r = …',
   t: 't is used in parametric curves: write (x(t), y(t))',
   Ans: 'Ans can only be used in the Calc tab',
@@ -242,7 +243,16 @@ export function analyse(rows, settings = {}) {
     return resolve(fnCache, name, node, () => {
       const slots = {};
       def.params.forEach((p, k) => { slots[p.name] = k; });
-      const body = compile(def.body, makeCtx({ slots }));
+      const body = compile(def.body, makeCtx({
+        slots,
+        unknown(n, where) {
+          // f(x) = x + y: a graph letter that isn't a parameter has no value here.
+          if (PLOT_VARS.has(n)) {
+            const params = [...def.params.map((p) => p.name), n].join(', ');
+            throw new ExprError(`'${n}' isn't a parameter of ${name}. To use it, write ${name}(${params}) = …`, where.start, where.end);
+          }
+        },
+      }));
       return { arity: def.params.length, call: (args) => body(args) };
     });
   }
@@ -370,8 +380,14 @@ export function analyse(rows, settings = {}) {
       return;
     }
     const ast = parsed[i].ast;
-    const missing = ast ? missingNames(ast) : explained.missing;
-    results[i] = { kind: 'error', error: { ...explained, missing: missing.length ? missing : explained.missing } };
+    // Never offer a slider for a graph letter (x, y, r, θ, t) or Ans: "y = 1" would be a
+    // graph, not a value.
+    const offerable = (n) => !PLOT_VARS.has(n) && n !== 'Ans';
+    const fromAst = ast ? missingNames(ast) : [];
+    const missing = fromAst.length ? fromAst : explained.missing.filter(offerable);
+    const error = { ...explained, missing };
+    if (!missing.length) delete error.missing;
+    results[i] = { kind: 'error', error };
   });
 
   function isKnownName(n) {
@@ -617,8 +633,40 @@ export function analyse(rows, settings = {}) {
     return derive(node, v, deriveEnv);
   }
 
+  // A string that changes exactly when something `text` can depend on changes: the
+  // angle unit and the text of every definition it uses, directly or through other
+  // definitions. Lets callers keep results across edits to unrelated rows.
+  function dependencyKey(text) {
+    let ast;
+    try {
+      ast = parseExpression(String(text || ''));
+    } catch {
+      return `${angle}|`;
+    }
+    const seen = new Set();
+    const queue = (node) => {
+      const refs = referencedNames(node);
+      return [...refs.names, ...refs.calls];
+    };
+    const todo = queue(ast);
+    while (todo.length) {
+      const n = todo.pop();
+      if (seen.has(n)) continue;
+      seen.add(n);
+      const def = defs.get(n);
+      if (!def) continue;
+      for (const d of [def, ...(def.others || [])]) todo.push(...queue(d.body));
+    }
+    const parts = [];
+    for (const n of [...seen].sort()) {
+      const def = defs.get(n);
+      if (def) parts.push([def, ...(def.others || [])].map((d) => rows[d.index].text).join('\u0001'));
+    }
+    return `${angle}|${parts.join('\u0000')}`;
+  }
+
   return {
-    rows: results, angle, evaluate, unknownsOf, compileIn, derivativeAst,
+    rows: results, angle, evaluate, unknownsOf, compileIn, derivativeAst, dependencyKey,
     isDefined: (name) => defs.has(name),
     functionDef: deriveEnv.func,
   };

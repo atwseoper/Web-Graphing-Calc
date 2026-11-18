@@ -52,7 +52,7 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
     if (b) update({ solveFor: b.dataset.name });
   });
   const givenBox = h('div', { class: 'given', hidden: true });
-  const givenInputs = new Map();
+  const givenRows = new Map(); // name -> { row, input, err }
   const fromInput = h('input', { class: 'mini-input', ...INPUT_ATTRS, 'aria-label': 'Search from', placeholder: 'auto' });
   const toInput = h('input', { class: 'mini-input', ...INPUT_ATTRS, 'aria-label': 'Search to', placeholder: 'auto' });
   fromInput.addEventListener('input', () => { typed(); update({ from: fromInput.value }); });
@@ -81,7 +81,7 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
     },
   }, '+ Add equation');
   const sysSection = h('section', { class: 'solve-section' },
-    h('span', { class: 'field-label' }, 'Linear equations, one per line'), sysList, addEqBtn);
+    h('span', { class: 'field-label' }, 'Equations, one per line'), sysList, addEqBtn);
 
   function sysInput(i) {
     const input = h('input', { class: 'solve-input', ...INPUT_ATTRS, 'aria-label': `Equation ${i + 1}`, enterkeyhint: 'next' });
@@ -202,21 +202,31 @@ export function createSolvePanel({ root, store, getAnalysis, onShowOnGraph }) {
       // Values for the others.
       const others = r.unknowns.filter((n) => n !== r.solveFor);
       setHidden(givenBox, false);
+      // Each row is built once and kept: moving a focused input to a new element would
+      // take the focus away after every key press.
       const rows = others.map((n) => {
-        let input = givenInputs.get(n);
-        if (!input) {
-          input = h('input', { class: 'mini-input given-input', ...INPUT_ATTRS, 'aria-label': `Value of ${n}` });
+        let g = givenRows.get(n);
+        if (!g) {
+          const input = h('input', { class: 'mini-input given-input', ...INPUT_ATTRS, 'aria-label': `Value of ${n}` });
           input.addEventListener('input', () => {
             typed();
             update({ given: { ...store.get().solve.given, [n]: input.value } });
           });
-          givenInputs.set(n, input);
+          const err = h('span', { class: 'given-error', hidden: true });
+          g = { input, err, row: h('label', { class: 'given-row' }, h('span', { class: 'given-name' }, `${n} =`), input, err) };
+          givenRows.set(n, g);
         }
-        syncInput(input, solve.given[n] || '');
-        const err = r.givenErrors && r.givenErrors[n] && !editing ? h('span', { class: 'given-error' }, r.givenErrors[n]) : null;
-        return h('label', { class: 'given-row' }, h('span', { class: 'given-name' }, `${n} =`), input, err);
+        syncInput(g.input, solve.given[n] || '');
+        const message = r.givenErrors && r.givenErrors[n] && !editing ? r.givenErrors[n] : '';
+        setText(g.err, message);
+        setHidden(g.err, !message);
+        return g.row;
       });
-      givenBox.replaceChildren(...rows);
+      const key = others.join(',');
+      if (givenBox.dataset.key !== key) {
+        givenBox.dataset.key = key;
+        givenBox.replaceChildren(...rows);
+      }
     }
     if (r.needs && r.needs.length) {
       setText(note, `Give ${r.needs.length === 1 ? 'a value' : 'values'} for ${r.needs.join(', ')} to solve for ${r.solveFor}.`);
