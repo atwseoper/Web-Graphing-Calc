@@ -6,6 +6,10 @@ import { formatNumber } from '../expr/format.js';
 import { defaultDomain } from '../expr/model.js';
 import { niceStep } from '../plot/viewport.js';
 import { sliderRange, snapToStep, valueText } from '../expr/slider.js';
+import {
+  riemannOf, taylorOf, secantOf, DEFAULT_RIEMANN_N, DEFAULT_TAYLOR_DEGREE, DEFAULT_SECANT_H,
+} from '../expr/calculus.js';
+import { taylorText } from '../expr/taylor.js';
 import { integrate } from '../numerics/integrate.js';
 import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
 import { parse } from '../expr/parser.js';
@@ -24,7 +28,9 @@ const INPUT_ATTRS = {
   autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next',
 };
 
-export function createExprList({ listEl, addBtn, store, graph }) {
+export function createExprList({
+  listEl, addBtn, store, graph, secantPlayer = null,
+}) {
   const els = new Map(); // row id -> element refs
   const lastEdit = new Map(); // row id -> timestamp
   let errorTimer = 0;
@@ -198,7 +204,52 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       if (b && graph) graph.showPoint(id, Number(b.dataset.x), Number(b.dataset.y), b.dataset.kind);
     });
     const poiBlock = h('div', { class: 'an-block' }, poiList, poiHead);
-    const analysisPanel = h('div', { class: 'expr-analysis', hidden: true }, derivRow, atRow, intRow, poiBlock);
+    // Visual calculus (Phase 6b).
+    const miniInput = (label, field) => {
+      const el = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': label });
+      el.addEventListener('input', () => {
+        if (field === 'secantH' && secantPlayer) secantPlayer.stop(id);
+        updateRow(id, { [field]: el.value });
+      });
+      return el;
+    };
+    const toggleChip = (label, field, onToggle) => h('button', {
+      type: 'button', class: 'chip calc-chip', 'aria-pressed': 'false',
+      onClick: () => {
+        const r = rowById(id);
+        if (!r) return;
+        if (onToggle) onToggle(r);
+        updateRow(id, { [field]: !r[field] });
+      },
+    }, label);
+    const riemannSel = h('select', { class: 'data-select riemann-method', 'aria-label': 'Riemann sum' },
+      ...[['', 'Off'], ['left', 'Left'], ['right', 'Right'], ['mid', 'Midpoint'], ['trap', 'Trapezium']]
+        .map(([v, t]) => h('option', { value: v }, t)));
+    riemannSel.addEventListener('change', () => updateRow(id, { riemann: riemannSel.value }));
+    const riemannN = miniInput('Number of rectangles', 'riemannN');
+    const riemannNLabel = h('span', { class: 'an-label' }, 'n =');
+    const riemannOut = h('div', { class: 'an-out', hidden: true });
+    const riemannBlock = h('div', { class: 'an-block' },
+      h('div', { class: 'an-row' }, h('span', { class: 'an-label' }, 'Riemann sum'), riemannSel, riemannNLabel, riemannN), riemannOut);
+    const taylorBtn = toggleChip('Taylor polynomial', 'taylor');
+    const taylorN = miniInput('Degree', 'taylorN');
+    const taylorAt = miniInput('Taylor polynomial about x', 'taylorAt');
+    const taylorOpts = h('span', { class: 'an-row calc-opts' },
+      h('span', { class: 'an-label' }, 'degree'), taylorN, h('span', { class: 'an-label' }, 'about x ='), taylorAt);
+    const taylorOut = h('div', { class: 'an-out', hidden: true });
+    const taylorAdd = h('button', { type: 'button', class: 'chip', hidden: true, onClick: () => addTaylorRow(id) }, 'Add to graph');
+    const taylorBlock = h('div', { class: 'an-block' }, h('div', { class: 'an-row' }, taylorBtn, taylorOpts), taylorOut, taylorAdd);
+    const secantBtn = toggleChip('Secant → tangent', 'secant', () => secantPlayer && secantPlayer.stop(id));
+    const secantH = miniInput('Secant h', 'secantH');
+    const secantPlay = h('button', {
+      class: 'row-btn play-btn', type: 'button', html: ICONS.play, 'aria-label': 'Play: shrink h towards 0', 'aria-pressed': 'false',
+      onClick: () => playSecant(id),
+    });
+    const secantOpts = h('span', { class: 'an-row calc-opts' }, h('span', { class: 'an-label' }, 'h ='), secantH, secantPlay);
+    const secantOut = h('div', { class: 'an-out', hidden: true });
+    const secantBlock = h('div', { class: 'an-block' }, h('div', { class: 'an-row' }, secantBtn, secantOpts), secantOut);
+    const calcBlocks = h('div', { class: 'an-calc' }, riemannBlock, taylorBlock, secantBlock);
+    const analysisPanel = h('div', { class: 'expr-analysis', hidden: true }, derivRow, atRow, intRow, calcBlocks, poiBlock);
     const analysisBtn = h('button', {
       class: 'row-btn', type: 'button', html: ICONS.analyse, 'aria-label': 'Analyse: derivative, values, integral', 'aria-pressed': 'false',
       onClick: () => {
@@ -291,6 +342,9 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       sweepBtn, ode, odeList, odeAdd, odeHint, odeKey: '',
       analysisBtn, analysisPanel, derivRow, derivText, derivBtn, atRow, atInput, atOut,
       intRow, intLabel, intVar, intFrom, intTo, intOut, poiBlock, poiHead, poiList, poiKey: '',
+      calcBlocks, riemannSel, riemannN, riemannNLabel, riemannOut,
+      taylorBtn, taylorN, taylorAt, taylorOpts, taylorOut, taylorAdd,
+      secantBtn, secantH, secantPlay, secantOpts, secantOut,
     };
   }
 
@@ -307,6 +361,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       if (!ids.has(id)) {
         e.li.remove();
         stopPlaying(id);
+        if (secantPlayer) secantPlayer.stop(id);
         els.delete(id);
         lastEdit.delete(id);
       }
@@ -573,6 +628,7 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     setHidden(e.derivRow, polar);
     setHidden(e.atRow, polar);
     setHidden(e.poiBlock, polar);
+    setHidden(e.calcBlocks, polar);
     syncInput(e.intFrom, row.intFrom);
     syncInput(e.intTo, row.intTo);
 
@@ -661,6 +717,8 @@ export function createExprList({ listEl, addBtn, store, graph }) {
       setHidden(e.intOut, true);
     }
 
+    renderCalculus(e, row, r, analysis);
+
     // Points of interest in the visible range
     const data = graph ? graph.pointsFor(row.id) : null;
     if (!data) {
@@ -682,6 +740,123 @@ export function createExprList({ listEl, addBtn, store, graph }) {
     setText(e.poiHead, pois.length
       ? `In view, x from ${fmt(data.xMin, 4)} to ${fmt(data.xMax, 4)}. Tap a point to mark it. Points closer together than the screen can show may be missed.${more}`
       : `No roots, extrema or intersections for x from ${fmt(data.xMin, 4)} to ${fmt(data.xMax, 4)}. Pan or zoom to look elsewhere.`);
+  }
+
+  // ---- visual calculus (Phase 6b) ----------------------------------------------------------
+  const METHOD_NAMES = { left: 'Left', right: 'Right', mid: 'Midpoint', trap: 'Trapezium' };
+  const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
+  const sub = (k) => String(k).replace(/\d/g, (d) => SUBSCRIPT[d]);
+  const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  const powers = (text) => text.replace(/\^(\d+)/g, (m, k) => k.replace(/\d/g, (d) => SUPERSCRIPT[d]));
+
+  function setOut(el, text, isError = false) {
+    setText(el, text);
+    el.classList.toggle('is-error', isError);
+    setHidden(el, !text);
+  }
+
+  function renderCalculus(e, row, r, analysis) {
+    // Riemann sum
+    if (e.riemannSel.value !== row.riemann) e.riemannSel.value = row.riemann;
+    syncInput(e.riemannN, row.riemannN);
+    e.riemannN.placeholder = String(DEFAULT_RIEMANN_N);
+    setHidden(e.riemannN, !row.riemann);
+    setHidden(e.riemannNLabel, !row.riemann);
+    const rs = riemannOf(row, r, analysis);
+    if (!rs) setOut(e.riemannOut, '');
+    else if (rs.error) setOut(e.riemannOut, rs.error, true);
+    else if (rs.need) setOut(e.riemannOut, 'Set the integral range above (∫ from … to …) to see the sum.', true);
+    else if (!rs.res.ok) setOut(e.riemannOut, rs.res.message, true);
+    else {
+      const parts = [`${METHOD_NAMES[rs.method]} sum = ${fmt(rs.res.value, 10)}`];
+      if (rs.exact.ok) {
+        parts.push(`∫ = ${fmt(rs.exact.value, 10)}`);
+        const diff = rs.res.value - rs.exact.value;
+        parts.push(`difference ${diff < 0 ? MINUS : '+'}${fmt(Math.abs(diff), 4)}`);
+      }
+      setOut(e.riemannOut, pretty(parts.join(' · ')));
+    }
+
+    // Taylor polynomial
+    e.taylorBtn.setAttribute('aria-pressed', String(!!row.taylor));
+    setHidden(e.taylorOpts, !row.taylor);
+    syncInput(e.taylorN, row.taylorN);
+    syncInput(e.taylorAt, row.taylorAt);
+    e.taylorN.placeholder = String(DEFAULT_TAYLOR_DEGREE);
+    const atx = fieldValue(analysis, row.atX);
+    e.taylorAt.placeholder = atx !== null ? fmt(atx, 6) : '0';
+    const tp = taylorOf(row, r, analysis);
+    let canAdd = false;
+    if (!tp) setOut(e.taylorOut, '');
+    else if (tp.error) setOut(e.taylorOut, tp.error, true);
+    else if (!tp.res.ok) setOut(e.taylorOut, taylorProblem(tp, r), true);
+    else {
+      const text = taylorText(tp.res.coeffs, tp.x0).replace(/^y = /, '');
+      const shown = text.length > 220 ? `${text.slice(0, 220)}…` : text;
+      setOut(e.taylorOut, `P${sub(tp.n)}(x) = ${powers(pretty(shown))}`);
+      canAdd = true;
+    }
+    setHidden(e.taylorAdd, !canAdd);
+    e.taylorAdd.disabled = !canAdd;
+
+    // Secant → tangent
+    e.secantBtn.setAttribute('aria-pressed', String(!!row.secant));
+    setHidden(e.secantOpts, !row.secant);
+    syncInput(e.secantH, row.secantH);
+    e.secantH.placeholder = String(DEFAULT_SECANT_H);
+    const playing = !!(secantPlayer && secantPlayer.isPlaying(row.id));
+    if (e.secantPlay.dataset.state !== String(playing)) {
+      e.secantPlay.dataset.state = String(playing);
+      e.secantPlay.innerHTML = playing ? ICONS.pause : ICONS.play;
+      e.secantPlay.setAttribute('aria-pressed', String(playing));
+      e.secantPlay.setAttribute('aria-label', playing ? 'Stop' : 'Play: shrink h towards 0');
+    }
+    setHidden(e.secantPlay, !secantPlayer);
+    const sc = secantOf(row, r, analysis, secantPlayer ? secantPlayer.value(row.id) : null);
+    if (!sc) setOut(e.secantOut, '');
+    else if (sc.error) setOut(e.secantOut, sc.error, true);
+    else if (!sc.ok) setOut(e.secantOut, `The function is undefined at x = ${fmt(sc.x0)} or x + h = ${fmt(sc.x0 + sc.h)}`, true);
+    else {
+      const name = r.kind === 'function' ? `${r.name}′` : 'f′';
+      const where = sc.fromAtX ? '' : ' (x = 0: set At x above to move it)';
+      const parts = [`h = ${fmt(sc.h, 4)}`, `secant gradient ${fmt(sc.m, 8)}`];
+      if (Number.isFinite(sc.slope)) parts.push(`${name}(${fmt(sc.x0, 6)}) = ${fmt(sc.slope, 8)}`);
+      setOut(e.secantOut, pretty(parts.join(' · ')) + where);
+    }
+  }
+
+  function taylorProblem(tp, r) {
+    const fname = r.kind === 'function' ? `${r.name}(x)` : 'This function';
+    const { res } = tp;
+    if (res.reason === 'numeric') {
+      return res.name
+        ? `No Taylor polynomial: ${res.name === '!' ? 'the factorial !' : res.name} has no exact derivative here.`
+        : 'No Taylor polynomial: part of this has no exact derivative.';
+    }
+    if (res.reason === 'undefined') {
+      return res.order > 0
+        ? `No Taylor polynomial about x = ${fmt(tp.x0)}: ${fname} isn't smooth there (a derivative is undefined).`
+        : `No Taylor polynomial about x = ${fmt(tp.x0)}: ${fname} is undefined there.`;
+    }
+    return 'No Taylor polynomial: this is too complicated to expand.';
+  }
+
+  function addTaylorRow(id) {
+    const i = latest ? latest.state.rows.findIndex((k) => k.id === id) : -1;
+    const row = i >= 0 ? latest.state.rows[i] : null;
+    const r = i >= 0 ? latest.analysis.rows[i] : null;
+    const tp = r ? taylorOf(row, r, latest.analysis) : null;
+    if (!tp || !tp.res || !tp.res.ok) return;
+    insertRow(id, taylorText(tp.res.coeffs, tp.x0), { focus: false });
+  }
+
+  function playSecant(id) {
+    const i = latest && secantPlayer ? latest.state.rows.findIndex((k) => k.id === id) : -1;
+    if (i < 0) return;
+    const row = latest.state.rows[i];
+    const sc = secantOf(row, latest.analysis.rows[i], latest.analysis);
+    if (!sc || sc.error) return;
+    secantPlayer.toggle(id, sc.h);
   }
 
   function renderIntegral(el, res, symbol, note) {

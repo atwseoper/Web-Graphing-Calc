@@ -22,7 +22,8 @@
 //                 test(x, y) -> boolean, edges: [{ F(x, y), strict }] }
 //   'slope'       dy/dx = f(x, y) or y' = f(x, y): { f(x, y) }, a slope field
 // Polar and parametric rows may also carry domainError: { which: 'min'|'max', message }.
-// Rows with an f of x also have derivative(): { f, text } | null, computed on first use.
+// Rows with an f of x also have derivative(): { f, text } | null, computed on first use,
+// and body: the expression in x as an AST (for Taylor polynomials, Phase 6b).
 import { ExprError } from './errors.js';
 import { parse, parseExpression, isDyDx } from './parser.js';
 import { tokenize } from './tokenizer.js';
@@ -347,7 +348,8 @@ export function analyse(rows, settings = {}) {
         const r = { kind: 'function', name: def.name, params: def.params.map((p) => p.name) };
         if (def.params.length === 1 && def.params[0].name === 'x') {
           r.f = unary(fn.call);
-          r.derivative = lazyDerivative({ type: 'apply', name: def.name, args: [{ type: 'sym', name: 'x' }] });
+          r.body = { type: 'apply', name: def.name, args: [{ type: 'sym', name: 'x' }] };
+          r.derivative = lazyDerivative(r.body);
         }
         results[i] = r;
       }
@@ -505,7 +507,7 @@ export function analyse(rows, settings = {}) {
         }
         if (lhs.name === 'y') {
           const { fn } = compileWith(rhs, 'x', bothSides('y'));
-          return { kind: 'cartesian', f: unary(fn), derivative: lazyDerivative(rhs) };
+          return { kind: 'cartesian', f: unary(fn), body: rhs, derivative: lazyDerivative(rhs) };
         }
         if (lhs.name === 'x') {
           const { fn } = compileWith(rhs, 'y', bothSides('x'));
@@ -553,7 +555,7 @@ export function analyse(rows, settings = {}) {
     const { fn, uses } = compileWith(expr, 'x', (n, where) => {
       if (n === 'y') throw new ExprError('To graph a function, write y = …', where.start, where.end);
     });
-    if (uses) return { kind: 'cartesian', f: unary(fn), derivative: lazyDerivative(expr) };
+    if (uses) return { kind: 'cartesian', f: unary(fn), body: expr, derivative: lazyDerivative(expr) };
     return { kind: 'value', value: fn([0]) };
   }
 

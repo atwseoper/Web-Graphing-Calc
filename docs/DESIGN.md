@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v1.0 – Phase 5 (offline app and safe sharing) complete; version 2 roadmap Phases 6–10 planned · **Updated:** 18 November 2026
+**Status:** v1.0 – Phase 6 (draggable points and visual calculus) complete; version 2 roadmap Phases 7–10 planned · **Updated:** 18 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -59,6 +59,8 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D49 | Phase 5a details. The worker's cache name is the build stamp plus a hash of the built page (`web-graphing-calc v1.0.0 abc1234 2026-11-18 <hash>`), so `sw.js` changes whenever the page does, even for two builds of one commit, and it only deletes caches with its own prefix (every github.io project shares one origin). It answers `./`, `./index.html` and `./graphcalc.html` (any query string) from the one saved copy. Besides the browser's own check on each launch, the page asks for an update when the app comes back to the foreground, at most hourly, so an app left open still hears about new versions. The “New version · Reload” toast is a lasting toast: it has no timer, and if a short toast (such as “Opened a shared graph · Undo”) takes its place, it comes back when that one goes. Closing it with × leaves the new version to start next time every window is closed. | 18 Nov 2026 |
 | D50 | Phase 5b details. The dialog's summary is worked out by parsing the rows only, never evaluating them, so a hostile link can't stall the page before the user agrees. Rows count as graphs (y/x/r = …, slope fields, implicit curves, inequalities, f(x) = …, parametric curves, expressions in x or θ), points (pairs without t) or “other rows” (variables, other functions, calculations, rows with errors); then data sets with their fits, and “Solve inputs” if any are filled in. Only counts appear (“2 graphs and 1 data set with 2 fits”), and a test checks that text from the project never does. The link leaves the address bar as soon as it is read. Open merges the project with the work as it is at that moment. A link that is still being decoded when a newer one arrives is dropped. | 18 Nov 2026 |
 | D51 | Phase 6a details. A point row gets a handle when its coordinates use one or two sliders and nothing else they use depends on those sliders (`c = 2a` then `(c, a)` isn't draggable, since only the coordinates are re-evaluated during a drag). `(a, 3)` and `(2, a)` follow the finger along their axis; any other one-slider point moves along its path, searched over the slider's range plus half its width each side (so one drag can carry it a little past the ends), staying on the nearby branch where the path crosses itself; two sliders are found by damped Newton steps measured on screen, and the point has no handle where the Jacobian's condition number is over 10⁶ (`(a + b, 2a + 2b)`). Values snap to each slider's step and are written as plain decimals (never `1e-7`, which would read as 1·e − 7). A drag past a bound the user typed moves that bound; empty bounds widen by themselves (D19). The undo history has explicit groups, so a whole drag is one step even when it changes two sliders and a bound. Handles are hit within 22 px on touch (12 px with a mouse), before points of interest, curves and panning; a second finger ends the drag and starts a pinch. Exported images draw plain points. | 18 Nov 2026 |
+| D52 | Taylor polynomials are worked out by Taylor-mode differentiation (truncated power series pushed through the expression), not by repeated symbolic derivatives as first planned in 7.1. Repeated derivatives grow exponentially: the 10th derivative of 1/(1 + x²) has millions of terms and takes seconds, and √(1 + x) hits the nesting limit by the 8th. Power series are exact up to rounding, cost O(n²) per operation, and cover everything the parser accepts: arithmetic and powers, every built-in function (inverse functions by integrating their derivative), user functions and f′(x), piecewise functions (the branch that holds at x0, or both sides if they agree on a boundary), and Σ/Π with fixed bounds. Q8 is unchanged: gamma, nCr, nPr and ! have no polynomial (beyond degree 0), and the panel names the function; corners and jumps (|x| at 0, floor at a whole number) say the function isn't smooth there. | 18 Nov 2026 |
+| D53 | Phase 6b details. Defaults: Riemann n = 10 (1–200), Taylor degree 3 (0–10) about the panel's x (At x, or 0), secant h = 1 at the panel's x (or 0). A Riemann sum uses the integral range and replaces its smooth shading with the rectangles or trapezia, with the sample points marked; the panel shows the sum, the Gauss–Kronrod value and the difference. The Taylor polynomial is drawn dashed with its centre marked; Add to graph inserts it below the row as `y = c0 + c1(x − x0) + …`, with 10 significant figures and no `e` notation (tiny coefficients are written ·10^(k)). The secant is drawn short-dashed through both points, with the tangent faint when At x is empty; ▷ shrinks h to a thousandth of its value over 4 s. The shrinking h is not saved or undoable, like the view; the row's own h is unchanged. The new row fields (riemann, riemannN, taylor, taylorN, taylorAt, secant, secantH) are saved, shared and undoable like the rest of the row. | 18 Nov 2026 |
 
 ## 1. Purpose
 
@@ -134,9 +136,9 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra, **
 | Value, gradient and tangent at x | P2 | Easy | |
 | Definite integral with error estimate | P2 | Moderate | Adaptive Gauss–Kronrod 7/15 |
 | Tappable points-of-interest markers | P2 | Easy | |
-| Riemann sums (left, right, midpoint, trapezium) against the exact integral | v2 | Easy | Phase 6b: error shown against the Gauss–Kronrod value |
-| Taylor polynomials of degree n at a point | v2 | Easy–Moderate | Phase 6b: repeated symbolic differentiation |
-| Secant → tangent animation | v2 | Easy | Phase 6b: reuses the play mechanics (D39) |
+| Riemann sums (left, right, midpoint, trapezium) against the exact integral | v2 | Easy | Done in Phase 6b (D53): difference shown against the Gauss–Kronrod value |
+| Taylor polynomials of degree n at a point | v2 | Easy–Moderate | Done in Phase 6b: Taylor-mode differentiation (D52) |
+| Secant → tangent animation | v2 | Easy | Done in Phase 6b (D53) |
 
 ### 3.5 Equation solver
 | Feature | Pri | Difficulty | Method |
@@ -270,7 +272,7 @@ build/
 | 3 – Data & Fit ✅ | CSV import/paste, data table, linear and non-linear fits, statistics, bands, residuals, weights, export | Beyond a handheld |
 | 4 – Polish & extras ✅ | Undo, sharing, project files, PNG export, home-screen install, θ sweep, slider play, pretty-printing, inequalities, implicit curves, slope fields, non-linear systems | Release |
 | 5 – Offline app & safe sharing ✅ | 5a service worker for offline start, background updates with a “New version · Reload” toast; 5b confirmation before opening a shared link | Installed app works with no signal; links can't silently replace work |
-| 6 – Drag & calculus | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
+| 6 – Drag & calculus ✅ | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
 | 7 – Axes & statistics | 7a log and log-log axes; 7b summary statistics, histograms, box plots, distribution functions | Parity with a handheld's statistics |
 | 8 – Photo digitiser | Image import, axis calibration, tapping points into a data set | Real-world data straight into fitting |
 | 9 – Lists & sequences | 9a lists, ranges and curve families; 9b recursive sequences, term plots, cobweb diagrams | Richer expressions |
@@ -297,11 +299,11 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 - The dialog (`ui/share-confirm.js`) reuses the help dialog's modal pattern: focus trapped, Cancel focused first, Escape and the backdrop cancel, 44 px buttons, and it works with the keypad closed.
 - A second link arriving while the dialog is open replaces the first in the dialog.
 
-**Phase 6 – Draggable points and visual calculus (two PRs)**
+**Phase 6 – Draggable points and visual calculus (two PRs) ✅**
 - *6a Draggable points.* A point row whose coordinates are slider variables, such as `(h, k)`, gets a larger handle that can be dragged. Dragging updates the sliders, snaps to their steps and counts as one undo step (as D39 does for play). If both coordinates depend on just one slider, as in `(a, f(a))` or `(a, 2a)`, the point moves along the path it traces as that slider changes, to the place nearest the finger (found by sampling the slider's range, then refining). If they depend on two sliders in a mixed way, as in `(a + b, a − b)`, both are solved for together by Newton steps from their current values, wherever that is well conditioned; otherwise the point isn't draggable. A drag past a slider's min or max widens its range, as typing a value does (D19, Q6). Handles take priority over panning within a 44 px touch target. Deciding which coordinates can be dragged is a pure function of the parsed row, so it is unit-tested.
 - *6b Visual calculus*, in the analysis panel of `y = f(x)` rows:
   - Riemann sums over the existing integral range: left, right, midpoint or trapezium (not Simpson's rule, Q9), with n from 1 to 200. Rectangles or trapezia are shaded, and the sum is shown next to the Gauss–Kronrod value with the difference between them.
-  - A Taylor polynomial of degree n (0–10) about a point (default: the panel's x), drawn dashed in the curve's colour, built from repeated symbolic derivatives. It can be added to the graph as a new row. Functions without a full symbolic derivative (gamma, nCr, !) don't offer it, and the panel says why (Q8).
+  - A Taylor polynomial of degree n (0–10) about a point (default: the panel's x), drawn dashed in the curve's colour, built by Taylor-mode differentiation (D52; repeated symbolic derivatives were the first plan). It can be added to the graph as a new row. Functions without a full symbolic derivative (gamma, nCr, !) don't offer it, and the panel says why (Q8).
   - Secant → tangent: a secant through x and x + h, with a play button that shrinks h towards 0 and shows the secant gradient approaching f′(x).
   - The new row settings are covered by saving, sharing and undo.
 
