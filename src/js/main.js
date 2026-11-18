@@ -24,6 +24,7 @@ import { showToast } from './ui/toast.js';
 import { createShareConfirm } from './ui/share-confirm.js';
 import { setUpInstall } from './ui/install.js';
 import { setUpOffline } from './ui/offline.js';
+import { createPointDrag } from './ui/point-drag.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,13 +54,21 @@ document.addEventListener('visibilitychange', () => {
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICONS[el.dataset.icon];
 
 // ---- components ----------------------------------------------------------------------------
-const graph = createGraphView({ canvas: $('graph-canvas'), store, getAnalysis, getFits });
+// Dragging points (Phase 6a): a whole drag is one undo step. undoHistory is created
+// below; these run only once a drag starts.
+const pointDrag = createPointDrag({
+  store, getAnalysis,
+  history: { beginGroup: () => undoHistory.beginGroup(), endGroup: () => undoHistory.endGroup() },
+});
+const graph = createGraphView({ canvas: $('graph-canvas'), store, getAnalysis, getFits, pointDrag });
 $('btn-zoom-in').addEventListener('click', () => graph.zoomBy(1.5));
 $('btn-zoom-out').addEventListener('click', () => graph.zoomBy(1 / 1.5));
 $('btn-home').addEventListener('click', () => graph.home());
 $('btn-fit').addEventListener('click', () => graph.fit());
 
 const exprList = createExprList({ listEl: $('expr-list'), addBtn: $('btn-add-row'), store, graph });
+// Dragging a point stops its sliders playing, as dragging a slider does (D39).
+pointDrag.onStart((rowIds) => rowIds.forEach((id) => exprList.stopPlaying(id)));
 
 // "Show on graph" from the Solve tab: add the rows (unless they are already there), switch
 // to the graph, frame the solutions and select the first curve so its points show.

@@ -84,6 +84,30 @@ export function drawPoint(ctx, sx, sy, color, radius = 5) {
   ctx.restore();
 }
 
+// A point that can be dragged (Phase 6a): a ringed handle with a soft halo, bigger than
+// a plain point so it reads as something to grab.
+export function drawHandle(ctx, sx, sy, color, colors, active = false) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = active ? 0.28 : 0.16;
+  ctx.beginPath();
+  ctx.arc(sx, sy, active ? 18 : 14, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = colors.bg;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 8, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
 // Trace marker: a ringed dot plus a rounded label with the coordinates.
 export function drawMarker(ctx, sx, sy, color, text, colors, viewWidth, viewHeight) {
   ctx.save();

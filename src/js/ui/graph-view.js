@@ -1,7 +1,8 @@
 // The graph canvas: sizing, drawing, and pan / pinch / wheel / double-tap / trace.
 // Also draws the analysis overlays (derivative, tangent, shaded integrals), the
 // points of interest (roots, extrema, intercepts, intersections) of selected curves,
-// and the data sets from the Data tab (points and error bars).
+// and the data sets from the Data tab (points and error bars). Points tied to sliders
+// get handles that can be dragged (Phase 6a, through the pointDrag controller).
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport,
 } from '../plot/viewport.js';
@@ -12,7 +13,7 @@ import {
   sampleCurve, sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
 } from '../plot/sample.js';
 import {
-  drawLines, drawPoint, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars, fillBand,
+  drawLines, drawPoint, drawHandle, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars, fillBand,
 } from '../plot/render.js';
 import { dataBounds } from '../data/table.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
@@ -46,7 +47,7 @@ export function fieldValue(analysis, text) {
   return !r.error && Number.isFinite(r.value) ? r.value : null;
 }
 
-export function createGraphView({ canvas, store, getAnalysis, getFits = () => [] }) {
+export function createGraphView({ canvas, store, getAnalysis, getFits = () => [], pointDrag = null }) {
   let ctx = canvas.getContext('2d'); // swapped for an off-screen canvas by renderImage()
   let renderScale = 0; // pixels per CSS px when rendering an image (0 = the screen's)
   let vp = null;
@@ -60,6 +61,7 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
   let selectedId = null; // curve whose points of interest are shown
   let poiSel = null; // tapped point of interest { rowId, x, y, label }
   let drawnPois = []; // [{ rowId, sx, sy, x, y, label, color }] for hit testing
+  let drawnHandles = []; // [{ rowId, sx, sy }] of draggable points (Phase 6a)
   let pendingFrame = null; // [x0, x1] to show once the canvas has a size
   let interacting = false;
   let wheelTimer = 0;
@@ -181,12 +183,21 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     }
 
     curves = [];
+    drawnHandles = [];
+    const handles = [];
     for (const { row, r } of visible) {
       if (r.kind === 'inequality' || r.kind === 'slope') continue;
       const lines = sampleRow(r, angleFactor);
       curves.push({ rowId: row.id, kind: r.kind, color: row.color, lines, result: r });
       if (r.kind === 'point') {
-        if (lines.length) drawPoint(ctx, lines[0].x[0], lines[0].y[0], row.color);
+        if (!lines.length) continue;
+        const [sx, sy] = [lines[0].x[0], lines[0].y[0]];
+        // Handles are drawn last, on top; not in exported images.
+        if (pointDrag && renderScale === 0 && pointDrag.isDraggable(row.id, [vp.scaleX, vp.scaleY])) {
+          handles.push({ rowId: row.id, sx, sy, color: row.color });
+        } else {
+          drawPoint(ctx, sx, sy, row.color);
+        }
       } else if (sweeps.has(row.id) && (r.kind === 'polar' || r.kind === 'parametric')) {
         drawSweep(row, r, lines, sweeps.get(row.id).frac, angleFactor);
       } else {
@@ -203,8 +214,33 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     else drawCartesianLabels(ctx, vp, colors);
 
     drawPointsOfInterest(visible);
+    for (const hd of handles) {
+      drawHandle(ctx, hd.sx, hd.sy, hd.color, colors, gesture && gesture.type === 'point' && gesture.rowId === hd.rowId);
+      drawnHandles.push(hd);
+    }
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // A draggable point under the finger: within a 44 px target on touch (Phase 6a).
+  function hitHandle(sx, sy, pointerType) {
+    const radius = pointerType === 'mouse' ? 12 : 22;
+    let best = null;
+    for (const hd of drawnHandles) {
+      const d = Math.hypot(hd.sx - sx, hd.sy - sy);
+      if (d <= radius && (!best || d < best.d)) best = { d, hd };
+    }
+    return best && best.hd;
+  }
+
+  function endPointDrag() {
+    if (!gesture || gesture.type !== 'point') return;
+    pointDrag.end(gesture.session);
+    gesture = null;
+    if (interacting) {
+      interacting = false;
+    }
+    requestDraw();
   }
 
   // Grid sampling is the slow part of drawing implicit curves and regions; redraws for
@@ -740,12 +776,27 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     const p = localPoint(e);
     pointers.set(e.pointerId, p);
     if (pointers.size === 2) {
+      endPointDrag();
       startPinch();
       return;
     }
     if (pointers.size > 2) return;
     if (armed) {
       gesture = { type: 'pan', vp0: vp, start: p, time: e.timeStamp, moved: false };
+      return;
+    }
+    // A handle takes priority over everything else under the finger, including panning.
+    const hd = pointDrag ? hitHandle(p.x, p.y, e.pointerType) : null;
+    const session = hd ? pointDrag.begin(hd.rowId) : null;
+    if (session) {
+      gesture = {
+        type: 'point', rowId: hd.rowId, session, start: p, time: e.timeStamp, moved: false,
+        offset: { x: hd.sx - p.x, y: hd.sy - p.y },
+      };
+      trace = { rowId: hd.rowId, kind: 'point' };
+      poiSel = null;
+      canvas.style.cursor = 'grabbing';
+      requestDraw();
       return;
     }
     const poi = hitPoi(p.x, p.y, e.pointerType);
@@ -768,7 +819,14 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    if (!pointers.has(e.pointerId)) return;
+    if (!pointers.has(e.pointerId)) {
+      // Mouse hovering: show that handles can be grabbed.
+      if (e.pointerType === 'mouse' && pointDrag) {
+        const p = localPoint(e);
+        canvas.style.cursor = hitHandle(p.x, p.y, 'mouse') ? 'grab' : '';
+      }
+      return;
+    }
     const p = localPoint(e);
     pointers.set(e.pointerId, p);
     if (!gesture) return;
@@ -783,7 +841,14 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     }
     const dx = p.x - gesture.start.x;
     const dy = p.y - gesture.start.y;
-    if (!gesture.moved && Math.hypot(dx, dy) > TAP_SLOP) gesture.moved = true;
+    if (!gesture.moved && Math.hypot(dx, dy) > (gesture.type === 'point' ? 2 : TAP_SLOP)) gesture.moved = true;
+    if (gesture.type === 'point') {
+      if (!gesture.moved) return;
+      interacting = true;
+      const target = toWorld(vp, p.x + gesture.offset.x, p.y + gesture.offset.y);
+      pointDrag.move(gesture.session, target, [vp.scaleX, vp.scaleY]);
+      return;
+    }
     if (gesture.type === 'pan' && gesture.moved) {
       if (trace) trace = null;
       interacting = true;
@@ -797,6 +862,12 @@ export function createGraphView({ canvas, store, getAnalysis, getFits = () => []
     if (!pointers.has(e.pointerId)) return;
     const p = pointers.get(e.pointerId);
     pointers.delete(e.pointerId);
+    if (gesture && gesture.type === 'point') {
+      // A tap on a handle just shows the point's coordinates (the trace stays).
+      endPointDrag();
+      canvas.style.cursor = '';
+      return;
+    }
     if (pointers.size === 0 && interacting) {
       interacting = false;
       requestDraw(); // now work out the points of interest for the new view

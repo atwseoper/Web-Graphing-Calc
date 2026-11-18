@@ -40,6 +40,7 @@ function graphPage() {
       ul(
         ['Drag a slider, or type its ', b('min'), ' and ', b('max'), '. ', b('Step'), ' sets how far each move goes (leave it empty for small steps).'],
         [b('▷ Play'), ' moves the slider back and forth across its range, so every graph that uses it moves too. Tap again to pause.'],
+        ['A point that uses sliders, such as ', b('(h, k)'), ' or ', b('(a, f(a))'), ', gets a ringed handle: drag it and the sliders follow. A point with one slider slides along its path. Going past a slider\'s max or min widens it. Undo puts the whole drag back.'],
         ['On a polar or parametric row, ', b('▷'), ' next to the θ or t range draws the curve as θ or t increases, showing the current point.'],
       ),
     ),

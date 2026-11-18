@@ -6,6 +6,8 @@
 //
 // Rapid changes of the same kind are merged into one step: typing in one row, dragging
 // one slider, editing one data set. A pause of COALESCE_MS starts a new step.
+// beginGroup() … endGroup() makes everything in between one step, whatever it changes
+// and however long it takes (dragging a point that moves two sliders, Phase 6a).
 
 export const UNDO_LIMIT = 200;
 export const COALESCE_MS = 1000;
@@ -78,6 +80,7 @@ export function createHistory({ limit = UNDO_LIMIT, coalesceMs = COALESCE_MS } =
   let future = [];
   let lastKey = null;
   let lastTime = -Infinity;
+  let group = null; // { recorded } while a group is open
 
   return {
     // Call with the full states before and after every store update.
@@ -85,6 +88,16 @@ export function createHistory({ limit = UNDO_LIMIT, coalesceMs = COALESCE_MS } =
       const a = undoable(prev);
       const b = undoable(next);
       if (sameUndoable(a, b)) return false;
+      if (group) {
+        if (!group.recorded) {
+          past.push(a);
+          if (past.length > limit) past = past.slice(past.length - limit);
+          group.recorded = true;
+        }
+        future = [];
+        lastKey = null;
+        return true;
+      }
       const key = changeKey(a, b);
       const merge = key !== null && key === lastKey && now - lastTime < coalesceMs && past.length > 0;
       if (!merge) {
@@ -98,6 +111,7 @@ export function createHistory({ limit = UNDO_LIMIT, coalesceMs = COALESCE_MS } =
     },
     // Returns the snapshot to restore, or null. `current` is the full current state.
     undo(current) {
+      group = null;
       if (!past.length) return null;
       future.push(undoable(current));
       lastKey = null;
@@ -111,6 +125,14 @@ export function createHistory({ limit = UNDO_LIMIT, coalesceMs = COALESCE_MS } =
     },
     // Stop merging into the current step (e.g. when the user moves to another field).
     seal() {
+      lastKey = null;
+    },
+    beginGroup() {
+      group = { recorded: false };
+      lastKey = null;
+    },
+    endGroup() {
+      group = null;
       lastKey = null;
     },
     canUndo: () => past.length > 0,
