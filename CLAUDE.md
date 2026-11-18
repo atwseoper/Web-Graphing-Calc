@@ -1,6 +1,6 @@
 # Project notes for Claude
 
-- The single deliverable is `dist/graphcalc.html`, built from `src/` by `npm run build`. It must stay fully self-contained: no CDN links, fonts or network requests at runtime.
+- The single deliverable is `dist/graphcalc.html`, built from `src/` by `npm run build`. It must stay fully self-contained: no CDN links, fonts or network requests at runtime. The one exception (D45, from Phase 5) is `dist/sw.js`, a service worker that the GitHub Pages site serves beside the page for offline start. It caches only the page, and `graphcalc.html` must keep working without it.
 - No npm dependencies (runtime or dev). Use Node built-ins only (`node:test`, `node:assert`, `node:fs`, ...).
 - Source JS is ES modules, but the bundler supports only the subset documented at the top of `build/bundle.mjs`: named imports/exports, relative paths, no default exports, no re-exports, no import cycles, no reassigning exported `let`s.
 - Keep maths and parsing modules (`src/js/expr`, `numerics`, `fit`, `data`, `plot/viewport.js`) free of DOM access so they can be unit-tested in Node. Add tests in `tests/` for every such module.
