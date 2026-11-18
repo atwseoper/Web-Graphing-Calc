@@ -54,7 +54,8 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D44 | Non-linear systems in the Solve tab's System mode: when any equation isn't linear, the system must have as many equations as unknowns (at most 6). It is solved by damped Newton (Levenberg–Marquardt, with exact symbolic Jacobians where possible) from about 240 starting points spread over −10…10 for each unknown (a grid for up to 3 unknowns, a Halton sequence beyond), widening to ±1000 if nothing is found, within a time budget. Every different solution is listed with its residual, and the note says the search can miss solutions. With two unknowns, “Show on graph” adds each equation (as an implicit curve where needed) and the solution points. Linear systems are still solved exactly. | 16 Nov 2026 |
 | D45 | Exception to D5 for the GitHub Pages site only: the build also writes `dist/sw.js`, a service worker, so the installed app (phone home screen, or Chrome/Edge on Windows) starts with no connection. Browsers only register a service worker from a real same-origin script URL (`data:` and `blob:` are refused), so it can't be inlined. `graphcalc.html` stays fully self-contained and skips registration when opened from disk. The worker caches only the page itself and fetches nothing else. Updates arrive in the background: launches always use the saved copy, the browser fetches a new `sw.js` (which changes with every build) and caches the new page, and the page then shows a “New version · Reload” toast. Tapping it saves the work, activates the new version and reloads. | 18 Nov 2026 |
 | D46 | Version 2 roadmap, in this order: Phase 5 offline app and shared-link confirmation; Phase 6 draggable points and visual calculus; Phase 7 log axes and statistics; Phase 8 photo digitiser; Phase 9 lists, curve families and sequences; Phase 10 notes, folders and examples (section 7.1). Each phase is delivered as staged pull requests, merged once tests and the build pass, with its open questions (section 9) settled before coding starts. Notes rows were at first ruled out, because shared links could carry abusive text. They are back in because links will ask before opening (D47), notes are plain text only (no links or formatting), and free text could already arrive in data set names and unparsed rows. | 18 Nov 2026 |
-| D47 | Shared links ask before opening. When the page opens with a `#g=…` link, or the link changes, the project is decoded and checked first; nothing replaces the current work until the user agrees. A dialog, “Open a shared project?”, says that the link holds graphs and data from someone else and should only be opened if the user trusts where it came from, and that it replaces what is on screen (undoable). It gives a factual summary (for example “4 graphs, 1 data set with 2 fits”), never text from the project itself. Open and Cancel buttons; Cancel has the focus, and Escape or tapping outside cancels. Cancel keeps the current work and clears the link from the address bar. Damaged links show the existing error with no dialog. Project files the user picks themselves, and the built-in examples (Phase 10), open without asking. | 18 Nov 2026 |
+| D47 | Shared links ask before opening. When the page opens with a `#g=…` link, or the link changes, the project is decoded and checked first; nothing replaces the current work until the user agrees. A dialog, “Open a shared project?”, says that the link holds graphs and data from someone else and should only be opened if the user trusts where it came from, and that it replaces what is on screen (undoable). It gives a factual summary (for example “4 graphs, 1 data set with 2 fits”), never text from the project itself. Open and Cancel buttons; Cancel has the focus, and Escape or tapping outside cancels. Cancel keeps the current work and clears the link from the address bar. Damaged links show the existing error with no dialog. Project files the user picks themselves, and the built-in examples (Phase 10), open without asking. The rule is to ask whenever a project could open without the user deliberately choosing it, so if the installed app ever opens project files directly (manifest file handling), those ask too. | 18 Nov 2026 |
+| D48 | Version 2 open questions settled (section 9, Q4–Q22). Changes to the plan: points whose coordinates are linked through sliders, such as `(a, 2a)`, are draggable in 6a; the summary card offers a choice of quartile method; slope fields work on log axes too; perspective correction joins Phase 8, because a general calibration mapping is simpler to build once than to rework later. Hypothesis tests and confidence intervals, data-set columns in expressions, and opening project files directly in the installed app are kept for later (section 7.2). | 18 Nov 2026 |
 
 ## 1. Purpose
 
@@ -284,6 +285,7 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 - The worker caches only the page in its scope. On install it saves `./`; it answers requests for pages in its scope from the cache, ignoring query strings (the `#g=` fragment never reaches it); any other request goes straight to the network.
 - Updates: the browser fetches a changed `sw.js` and installs it; the new worker caches the new page and waits. The page sees the waiting worker and shows a lasting toast, “New version · Reload”. Tapping it saves the current state, tells the worker to take over and reloads once it has. Nothing reloads without the tap.
 - Tests: the build test checks that `sw.js` exists, carries the build stamp and caches nothing outside its scope, and that `graphcalc.html` still passes the self-contained check. Manual check: install on Android and on Windows (Chrome or Edge), go offline, launch; deploy a change and see the toast.
+- When running installed (`display-mode: standalone`) and storage isn't already persistent, the page calls `navigator.storage.persist()` once, silently, so neither the saved page nor the auto-saved work is cleared when the device runs short of space. Chrome, Edge and Safari decide this without a prompt; the call isn't made in a browser tab, where Firefox would prompt (Q4).
 - CLAUDE.md is updated to match D45.
 
 *5b Shared-link confirmation (D47)*
@@ -293,48 +295,58 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 - A second link arriving while the dialog is open replaces the first in the dialog.
 
 **Phase 6 – Draggable points and visual calculus (two PRs)**
-- *6a Draggable points.* A point row whose coordinates are slider variables, such as `(h, k)`, gets a larger handle that can be dragged. Dragging updates the sliders, snaps to their steps and counts as one undo step (as D39 does for play). If one coordinate is a lone slider and the other is an expression in it, as in `(a, f(a))`, the point slides along the curve and follows the finger's x. Handles take priority over panning within a 44 px touch target. Deciding which coordinates can be dragged is a pure function of the parsed row, so it is unit-tested.
+- *6a Draggable points.* A point row whose coordinates are slider variables, such as `(h, k)`, gets a larger handle that can be dragged. Dragging updates the sliders, snaps to their steps and counts as one undo step (as D39 does for play). If both coordinates depend on just one slider, as in `(a, f(a))` or `(a, 2a)`, the point moves along the path it traces as that slider changes, to the place nearest the finger (found by sampling the slider's range, then refining). If they depend on two sliders in a mixed way, as in `(a + b, a − b)`, both are solved for together by Newton steps from their current values, wherever that is well conditioned; otherwise the point isn't draggable. A drag past a slider's min or max widens its range, as typing a value does (D19, Q6). Handles take priority over panning within a 44 px touch target. Deciding which coordinates can be dragged is a pure function of the parsed row, so it is unit-tested.
 - *6b Visual calculus*, in the analysis panel of `y = f(x)` rows:
-  - Riemann sums over the existing integral range: left, right, midpoint or trapezium, with n from 1 to 200. Rectangles or trapezia are shaded, and the sum is shown next to the Gauss–Kronrod value with the difference between them.
-  - A Taylor polynomial of degree n (0–10) about a point (default: the panel's x), drawn dashed in the curve's colour, built from repeated symbolic derivatives. It can be added to the graph as a new row.
+  - Riemann sums over the existing integral range: left, right, midpoint or trapezium (not Simpson's rule, Q9), with n from 1 to 200. Rectangles or trapezia are shaded, and the sum is shown next to the Gauss–Kronrod value with the difference between them.
+  - A Taylor polynomial of degree n (0–10) about a point (default: the panel's x), drawn dashed in the curve's colour, built from repeated symbolic derivatives. It can be added to the graph as a new row. Functions without a full symbolic derivative (gamma, nCr, !) don't offer it, and the panel says why (Q8).
   - Secant → tangent: a secant through x and x + h, with a play button that shrinks h towards 0 and shows the secant gradient approaching f′(x).
   - The new row settings are covered by saving, sharing and undo.
 
 **Phase 7 – Log axes and statistics (two PRs)**
-- *7a Log axes.* Each axis can be linear or log, set independently in Settings (giving semi-log and log-log). Ticks are 1-2-5 within each decade, with powers-of-ten labels over wide ranges. Curves are sampled evenly in log x, values ≤ 0 aren't drawn, and pan and zoom are multiplicative. Data points, fits, bands and residuals all follow the axes. The polar grid is not offered with log axes. The mapping lives in `plot/viewport.js` and is unit-tested.
+- *7a Log axes.* Each axis can be linear or log, set independently in Settings (giving semi-log and log-log). Ticks are 1-2-5 within each decade, with powers-of-ten labels over wide ranges. Curves are sampled evenly in log x, values ≤ 0 aren't drawn, and pan and zoom are multiplicative. Data points, fits, bands and residuals all follow the axes. Implicit curves and inequalities work as before, since they are computed on a screen grid. Slope fields work too: marks sit on a grid fixed in screen space and point along the slope as it appears on the transformed axes, d(log y)/d(log x) = (x/y)·f on log-log for example, and solution curves are integrated in data space and drawn through the mapping (Q13). Anything at x ≤ 0 or y ≤ 0 on a log axis is not drawn. The polar grid is not offered with log axes. The mapping lives in `plot/viewport.js` and is unit-tested.
 - *7b Statistics.*
-  - A summary card for each data set: n, mean, median, sample and population SD, min, max, quartiles, IQR, and the correlation r.
+  - A summary card for each data set: n, mean, median, sample and population SD, min, max, quartiles, IQR, and the correlation r. Quartiles use the TI-84 method (medians of the lower and upper halves) by default, with linear interpolation (as Excel's QUARTILE.INC and R) as the alternative; the choice is on the card, named there, and saved with the project like the angle setting (Q10).
   - A data set can be shown as a scatter plot (as now), a histogram of a chosen column (automatic bin width, editable) or a box plot.
   - New functions, reserved as words like `sum`: `normalpdf`, `normalcdf`, `invnorm`, `tpdf`, `tcdf`, `invt`, `chi2pdf`, `chi2cdf`, `binompdf`, `binomcdf`, `poissonpdf`, `poissoncdf`, with standard defaults (μ = 0, σ = 1). Probabilities show as shaded areas through the existing integral shading. Discrete distributions are drawn as stems at whole numbers.
   - The numerics go in a new pure module, `numerics/distributions.js`. It builds on what `numerics/stats.js` already has for fits (`normalQuantile`, `tCdf`, `tQuantile`, `betaInc`, `gammaP`/`gammaQ`, `lnGamma`) and adds the densities and the discrete distributions. It is tested against published reference values.
 
 **Phase 8 – Photo digitiser (one PR)**
 - “From photo” in the Data tab opens an image (on phones the picker offers the camera) in a full-screen digitising view with pinch-zoom and a magnifier under the finger.
-- Calibration: place two reference points on each axis and type their values. Each axis is linear or log. The mapping from pixels to values is affine, built from the two axis lines, so it allows for a rotated or slightly skewed image. Perspective isn't corrected.
+- Calibration, three ways:
+  - *Axes*: place two reference points on each axis and type their values. Each axis is linear or log. The mapping is affine, built from the two axis lines, so it allows for a rotated or slightly skewed image.
+  - *Known length* (Q15), for real objects with no axes: place an origin and a second point a known distance away, with the axis direction taken from that line; square pixels are assumed.
+  - *Four known points* (Q16), for photos taken at an angle: place four points with known coordinates (the corners of a rectangle of known size, or four grid crossings on a photographed graph). The mapping is a perspective transform (homography), found by solving an 8×8 linear system with the existing `linalg.js`.
+  - All three are one general mapping (affine being a special case of perspective), so log axes apply to each.
 - Then tap to add points; points can be dragged and deleted. “Done” makes a new data set (x, y), ready for fitting.
-- The image itself isn't kept in the project, only the points (see question 14). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
+- The image itself is never stored, in project files or anywhere else; only the points are kept (Q14). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
 
 **Phase 9 – Lists, curve families and sequences (two PRs)**
 - *9a Lists.*
   - Square-bracket lists `[1, 2, 3]` and ranges `[1...10]` and `[0, 0.5...5]`; list variables `L = […]` (single letters, as D10 requires).
   - Arithmetic and functions apply to each element. A row that uses a list draws one curve per element, in shades of the row's colour. `(L, M)` plots the pairs as points.
-  - List functions: `length`, `mean`, `median`, `stdev`, plus the existing `min` and `max`.
+  - List functions: `length`, `mean`, `median`, `stdev`, plus the existing `min` and `max`. `sum(L)` with one argument totals a list; with four it is still Σ (D17, Q17).
   - Limits: 10,000 elements per list and 50 curves per family. Analysis points are shown only for single curves.
 - *9b Sequences.*
   - A function that refers to itself at n − 1 (or n − 2 …) together with starting-value rows such as `u(0) = 0.2` is a recursive sequence, not a circular definition. It is evaluated with memoisation for whole n ≥ 0, up to n = 10⁵.
-  - Sequence rows plot their terms as points (n, u(n)) and evaluate in the Calc tab (`u(50)`).
+  - A per-row “Plot as sequence” toggle draws terms as points (n, u(n)) instead of a curve; it is switched on automatically for recursive rows, and explicit sequences such as `u(n) = 1/n` can use it too (Q18). Sequences evaluate in the Calc tab (`u(50)`).
   - First-order recurrences u(n) = g(u(n − 1)) offer a cobweb diagram: y = g(x), y = x and the staircase, with a play button that adds one step at a time.
+  - If 9b has room (Q19), a bifurcation diagram: for a recurrence with a slider, the long-run values plotted against that slider's range (the logistic map's period-doubling route to chaos). Otherwise it moves to a later PR.
 
 **Phase 10 – Notes, folders and examples (two PRs)**
 - *10a Notes, folders and row reordering.*
   - The add button offers Expression, Note and Folder. Notes and folders are new row kinds in the state, so saving, sharing and undo cover them.
-  - A note is plain text, at most 500 characters. It is always shown as text: no HTML, no formatting, and web addresses aren't turned into links. Notes aren't evaluated, and they're left out of the key on exported images.
+  - A note is plain text, at most 500 characters. It is always shown as text: no HTML, no formatting, and web addresses aren't turned into links. Typing `"` at the start of an empty row turns it into a note (Q20). Notes aren't evaluated, and they're left out of the key on exported images (Q21).
   - A folder is a named row (at most 40 characters, plain text) that groups the rows under it, one level deep. It can collapse, and it can hide or show everything in it in one tap.
   - Rows get a drag handle for reordering; on touch the drag starts after a short press so it doesn't fight scrolling. Dropping a row under a folder puts it in that folder. Row order is otherwise meaningless (section 8), so reordering only changes the display.
 - *10b Examples gallery.*
   - An “Examples” section in the help dialog, and a link to it in the empty-list hint, opens a list of about 8–12 built-in projects with a one-line description each.
-  - Candidate examples: projectile with a draggable launch angle; Newton's law of cooling fitted to data; Lissajous curves; predator–prey slope field; the logistic map's cobweb diagram; Riemann sums converging; normal-distribution probabilities; a digitised arch fitted with a parabola.
+  - Candidate examples: projectile with a draggable launch angle; Newton's law of cooling fitted to data; Lissajous curves; predator–prey slope field; the logistic map's cobweb diagram; Riemann sums converging; normal-distribution probabilities; a digitised arch fitted with a parabola. The final set is chosen once Phases 6–9 are built (Q22).
   - The examples are project JSON files in `src/examples/`, inlined by the build. Opening one replaces the current work as one undoable step, with no trust dialog (D47). A unit test opens every example and checks that it parses with no errors, so they keep working as the app changes.
+
+### 7.2 Later (not scheduled)
+- Hypothesis tests and confidence intervals (z, t, χ²) on data sets (Q11).
+- Data-set columns usable in expressions, as lists, once Phase 9a exists (Q12).
+- Opening `.json` project files directly in the installed app (manifest file handling); these would ask first, under D47.
 
 ## 8. Expression syntax (as implemented)
 
@@ -370,35 +382,35 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 2. ~~Which P3 extras to keep~~ – all of them (D33).
 3. ~~Slider animation (play button) and a step setting~~ – yes, in Phase 4 (D33).
 
-Version 2: to settle before each phase starts. Each has a proposed answer.
+Version 2 questions, all settled on 18 November 2026 (D48):
 
 *Phase 5*
-4. Should the app ask the browser for persistent storage (`navigator.storage.persist()`) when it runs as an installed app, so the saved copy and auto-save are never cleared? *Proposed: yes, installed only, with no prompt of our own.*
-5. Should project files the user opens themselves also show the shared-project dialog? *Proposed: no; they were chosen deliberately in a file picker, unlike a link that opens with one tap.*
+4. ~~Ask for persistent storage?~~ – yes, silently and only when running installed (7.1, 5a).
+5. ~~Should project files also show the shared-project dialog?~~ – no, because they are opened deliberately. Anything that can open with one tap asks (D47).
 
 *Phase 6*
-6. When a dragged point goes past a slider's min or max, should it stop at the edge or widen the range? *Proposed: widen it, as typing a value outside the range already does (D19).*
-7. Beyond lone sliders and `(a, f(a))`, should points with linked coordinates such as `(a, 2a)` be draggable? *Proposed: not in 6a.*
-8. Taylor polynomials for functions without a full symbolic derivative (gamma, nCr, !): leave them out, or use numeric derivatives up to a low degree? *Proposed: leave them out and say why.*
-9. Should Simpson's rule be one of the Riemann methods? *Proposed: no; it isn't a Riemann sum, and the panel already shows the accurate value.*
+6. ~~Dragging a point past a slider's min or max~~ – widens the range, as typing does (D19).
+7. ~~Points with linked coordinates such as `(a, 2a)`~~ – draggable in 6a, along their path or by solving for two sliders.
+8. ~~Taylor polynomials without a full symbolic derivative~~ – not offered; the panel says why.
+9. ~~Simpson's rule among the Riemann methods~~ – no.
 
 *Phase 7*
-10. Which quartile method? *Proposed: the TI-84 method (medians of the lower and upper halves), named on the card.*
-11. Should hypothesis tests and confidence intervals (z, t, χ²) be part of 7b, or a later phase? *Proposed: later, if wanted.*
-12. Should data-set columns be usable in expressions, such as `mean` of a column in the Calc tab? *Proposed: after Phase 9, once lists exist.*
-13. Should slope fields and implicit curves work on log axes, or be hidden while log axes are on? *Proposed: implicit curves and inequalities work (they are computed on a screen grid); slope fields are hidden, with a note.*
+10. ~~Quartile method~~ – TI-84 by default, linear interpolation as a choice on the card, saved with the project.
+11. ~~Hypothesis tests and confidence intervals~~ – later, if wanted (7.2).
+12. ~~Data-set columns in expressions~~ – after Phase 9, as lists (7.2).
+13. ~~Slope fields and implicit curves on log axes~~ – everything works, including slope fields.
 
 *Phase 8*
-14. Should the photo be kept in project files (downscaled), or never stored? *Proposed: never stored; only the points are kept. It keeps share links and files small and avoids passing on personal photos.*
-15. Is a “known length” mode needed for photos of real objects without axes (set an origin and one known distance, square pixels assumed)? *Proposed: yes, as a second calibration option.*
-16. Perspective correction (four corners of a known rectangle) for photos taken at an angle? *Proposed: not in Phase 8.*
+14. ~~Keep the photo?~~ – never stored; only the points.
+15. ~~“Known length” calibration~~ – yes, as a second option.
+16. ~~Perspective correction~~ – yes, in Phase 8, as a third calibration option (four known points). It was asked for in a follow-up phase unless simpler in Phase 8, and it is simpler: one general mapping.
 
 *Phase 9*
-17. `sum` already means Σ with four arguments (D17). Should `sum(L)` with one argument total a list, or should there be a separate name such as `total`? *Proposed: overload by the number of arguments.*
-18. Explicit sequences such as `u(n) = 1/n` are ordinary functions today. How should a row say "plot as terms"? *Proposed: a per-row "Plot as sequence" toggle, switched on automatically for recursive rows.*
-19. Should the logistic-map bifurcation diagram (long-run values against a slider) be included as an extra? *Proposed: yes, if 9b has room.*
+17. ~~Totalling a list~~ – `sum(L)`, told apart from Σ by the number of arguments.
+18. ~~Plotting a row as a sequence~~ – a per-row toggle, on automatically for recursive rows.
+19. ~~Bifurcation diagram~~ – yes, if 9b has room; otherwise a later PR.
 
 *Phase 10*
-20. Should typing `"` at the start of an empty row turn it into a note, as a shortcut beside the add menu? *Proposed: yes.*
-21. Should notes appear in the key of exported images? *Proposed: no; the key lists what is drawn.*
-22. Which examples go in the gallery? *Proposed: the candidates in section 7.1, adjusted once Phases 6–9 are built.*
+20. ~~`"` at the start of a row makes a note~~ – yes.
+21. ~~Notes in the exported image key~~ – no.
+22. ~~Which examples~~ – the candidates in 7.1, revisited once Phases 6–9 are built.
