@@ -717,6 +717,13 @@ export function analyse(rows, settings = {}) {
     rows: results, angle, evaluate, unknownsOf, compileIn, derivativeAst, dependencyKey, dependencies,
     isDefined: (name) => defs.has(name),
     functionDef: deriveEnv.func,
+    // The body of a variable definition (a = …), or undefined (exact Taylor
+    // coefficients follow slider values through it, Phase 6c).
+    variableDef(name) {
+      const def = defs.get(name);
+      if (!def || def.kind !== 'variable' || def.duplicate) return undefined;
+      return { body: def.body };
+    },
   };
 }
 

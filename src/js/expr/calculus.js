@@ -9,6 +9,8 @@
 import { riemann, RIEMANN_MAX_N } from '../numerics/riemann.js';
 import { integrate } from '../numerics/integrate.js';
 import { taylor, evalTaylor, TAYLOR_MAX_DEGREE } from './taylor.js';
+import { exactConstant } from './taylor-exact.js';
+import { Rational } from '../numerics/rational.js';
 
 export const DEFAULT_RIEMANN_N = 10;
 export const DEFAULT_TAYLOR_DEGREE = 3;
@@ -59,18 +61,22 @@ export function taylorOf(row, r, analysis) {
   if (n.error) return { error: n.error };
   const at = field(analysis, row.taylorAt);
   if (at.error) return { error: at.error };
+  const fromAt = at.empty && atX(row, analysis) !== null;
   const x0 = at.empty ? (atX(row, analysis) ?? 0) : at.value;
+  // x0 as an exact fraction when its field is certainly rational ("1/3", "0.5", "a").
+  const x0Text = at.empty ? (fromAt ? row.atX : '') : row.taylorAt;
+  const x0Exact = x0Text ? exactConstant(x0Text, analysis) : Rational.int(0);
   if (!r.body) return { n: n.value, x0, res: { ok: false, reason: 'complex' }, f: null };
   let byKey = taylorCache.get(r);
   if (!byKey) taylorCache.set(r, byKey = new Map());
-  const key = `${x0}|${n.value}`;
+  const key = `${x0}|${n.value}|${x0Exact}`;
   let res = byKey.get(key);
   if (!res) {
-    res = taylor(r.body, analysis, x0, n.value);
+    res = taylor(r.body, analysis, x0, n.value, { x0Exact });
     byKey.set(key, res);
   }
   const f = res.ok ? (x) => evalTaylor(res.coeffs, x0, x) : null;
-  return { n: n.value, x0, res, f, fromAtX: at.empty && atX(row, analysis) !== null };
+  return { n: n.value, x0, res, f, fromAtX: fromAt };
 }
 
 // hOverride: h while the play button shrinks it (not saved).
