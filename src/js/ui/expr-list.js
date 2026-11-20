@@ -11,6 +11,7 @@ import {
 } from '../expr/calculus.js';
 import { taylorText } from '../expr/taylor.js';
 import { integrate } from '../numerics/integrate.js';
+import { discreteSum } from '../numerics/distributions.js';
 import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
 import { parse } from '../expr/parser.js';
 import { prettyLayout, isRich } from '../expr/pretty.js';
@@ -699,8 +700,8 @@ export function createExprList({
     e.atOut.classList.toggle('is-error', atErr);
     setHidden(e.atOut, !at);
 
-    // Integral
-    setText(e.intLabel, '∫ from');
+    // Integral (for stems of a discrete distribution, a sum over the whole numbers)
+    setText(e.intLabel, r.discrete ? 'Σ from' : '∫ from');
     setText(e.intVar, 'to');
     e.intFrom.placeholder = 'a';
     e.intTo.placeholder = 'b';
@@ -711,6 +712,10 @@ export function createExprList({
       setText(e.intOut, badBound.error.message);
       e.intOut.classList.add('is-error');
       setHidden(e.intOut, false);
+    } else if (ia !== null && ib !== null && r.discrete) {
+      const res = discreteSum(r.f, ia, ib);
+      const note = res.ok ? `(x = ${res.from} to ${res.to}, ${res.terms} term${res.terms === 1 ? '' : 's'})` : '';
+      renderIntegral(e.intOut, { ...res, error: 0 }, 'Σ', res.terms ? note : '(no whole numbers in this range)');
     } else if (ia !== null && ib !== null) {
       renderIntegral(e.intOut, integrate(r.f, ia, ib), '∫', '');
     } else {

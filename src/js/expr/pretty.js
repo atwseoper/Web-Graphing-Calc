@@ -21,6 +21,7 @@ const FN_NAMES = {
   asin: ['sin', '-1'], acos: ['cos', '-1'], atan: ['tan', '-1'],
   asinh: ['sinh', '-1'], acosh: ['cosh', '-1'], atanh: ['tanh', '-1'],
   ncr: 'nCr', npr: 'nPr', gamma: 'Γ',
+  invnorm: 'invNorm', invt: 'invT', chi2pdf: 'χ²pdf', chi2cdf: 'χ²cdf',
 };
 const CMP = { '<': '<', '>': '>', '<=': '≤', '>=': '≥' };
 

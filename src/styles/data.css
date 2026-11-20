@@ -389,3 +389,84 @@
 .start-row .mini-input { width: 84px; }
 .export-row { gap: 2px; }
 .export-row .an-label { margin-right: 4px; }
+
+/* Display mode and statistics (Phase 7b) */
+.display-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 4px 4px;
+}
+.display-box > .segmented button { min-height: 40px; }
+.display-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.display-opts .segmented { width: 132px; }
+.display-opts .segmented button { min-height: 36px; font-family: var(--mono); }
+.bin-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bin-input { width: 104px; }
+.bin-input.is-invalid { border-color: var(--error); }
+.display-note { margin: 0; }
+
+.stats-card {
+  margin: 10px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.stats-card > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.stats-card > summary::-webkit-details-marker { display: none; }
+.stats-card > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.stats-card[open] > summary::before { transform: rotate(45deg); }
+.stats-card > :not(summary) { margin-left: 12px; margin-right: 12px; }
+.stats-table {
+  width: calc(100% - 24px);
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.stats-table th,
+.stats-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.stats-table th:first-child {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.stats-table thead th { font-weight: 600; color: var(--text); }
+.stats-table td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.stats-r td { text-align: center; }
+.quartile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.quartile-row .segmented { flex: 1; }
+.stats-card .table-foot { margin-bottom: 4px; }

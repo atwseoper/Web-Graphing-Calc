@@ -1,7 +1,7 @@
 // Undo / redo of the user's work. Pure module – no DOM access.
 //
 // What is undoable: expression rows, data sets and fits, the Solve tab's inputs, and the
-// angle, grid and axis-type settings. The view (pan/zoom), the open tab, the keypad setting and the
+// angle, grid, axis-type and quartile settings. The view (pan/zoom), the open tab, the keypad setting and the
 // Calc history are not: undo should never feel like it is fighting the user.
 //
 // Rapid changes of the same kind are merged into one step: typing in one row, dragging
@@ -22,10 +22,11 @@ export function undoable(state) {
     grid: state.settings.grid,
     xAxis: state.settings.xAxis,
     yAxis: state.settings.yAxis,
+    quartiles: state.settings.quartiles,
   };
 }
 
-const PARTS = ['rows', 'nextId', 'data', 'solve', 'angle', 'grid', 'xAxis', 'yAxis'];
+const PARTS = ['rows', 'nextId', 'data', 'solve', 'angle', 'grid', 'xAxis', 'yAxis', 'quartiles'];
 
 export function sameUndoable(a, b) {
   return PARTS.every((k) => a[k] === b[k]);
@@ -39,7 +40,7 @@ export function applySnapshot(state, snap) {
     data: snap.data,
     solve: snap.solve,
     settings: {
-      ...state.settings, angle: snap.angle, grid: snap.grid, xAxis: snap.xAxis, yAxis: snap.yAxis,
+      ...state.settings, angle: snap.angle, grid: snap.grid, xAxis: snap.xAxis, yAxis: snap.yAxis, quartiles: snap.quartiles,
     },
   };
 }

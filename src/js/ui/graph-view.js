@@ -19,6 +19,7 @@ import {
   drawLines, drawPoint, drawHandle, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars, fillBand,
 } from '../plot/render.js';
 import { dataBounds } from '../data/table.js';
+import { setHistogram, boxPlot, columnValues } from '../data/summary.js';
 import { formatCoordinate, formatNumber } from '../expr/format.js';
 import { pointsOfInterest } from '../numerics/analysis.js';
 import { contour, regionRects, snapToCurve } from '../plot/implicit.js';
@@ -175,7 +176,7 @@ export function createGraphView({
   function sampleRow(r, angleFactor) {
     switch (r.kind) {
       case 'cartesian':
-      case 'function': return sampleCartesian(r.f, vp);
+      case 'function': return r.discrete ? stemPoints(r.f) : sampleCartesian(r.f, vp);
       case 'cartesian-x': return sampleCartesianX(r.f, vp);
       case 'parametric': return sampleParametric(r.fx, r.fy, r.domain.min, r.domain.max, vp);
       case 'polar': return samplePolar(r.f, r.domain.min, r.domain.max, vp, angleFactor);
@@ -235,6 +236,8 @@ export function createGraphView({
         } else {
           drawPoint(ctx, sx, sy, row.color);
         }
+      } else if (r.discrete) {
+        drawStems(lines, row.color);
       } else if (sweeps.has(row.id) && (r.kind === 'polar' || r.kind === 'parametric')) {
         drawSweep(row, r, lines, sweeps.get(row.id).frac, angleFactor);
       } else {
@@ -257,6 +260,39 @@ export function createGraphView({
     }
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // ---- discrete distributions (Phase 7b) -----------------------------------------------
+  // y = binompdf(10, 0.3, x) and the like are drawn as stems at whole numbers: each stem
+  // is a one-point "line" (so it can be tapped and traced), drawn down to the axis.
+  const MAX_STEMS = 4000;
+  function stemPoints(f) {
+    const { xMin, xMax } = worldBounds(vp);
+    const lo = Math.ceil(vp.logX ? Math.max(xMin, 1) : xMin);
+    const hi = Math.floor(xMax);
+    if (!(hi >= lo)) return [];
+    const every = Math.max(1, Math.ceil((hi - lo + 1) / MAX_STEMS));
+    const out = [];
+    for (let k = lo; k <= hi; k += every) {
+      const y = f(k);
+      if (!Number.isFinite(y)) continue;
+      const [sx, sy] = toScreen(vp, k, y);
+      if (Number.isFinite(sx) && Number.isFinite(sy)) out.push({ x: [sx], y: [sy], t: [k] });
+    }
+    return out;
+  }
+  function drawStems(all, color) {
+    // Zero-height stems (outside the distribution's support) stay traceable but aren't drawn.
+    const points = all.filter((p) => Math.abs(p.y[0] - baselineY()) > 0.5);
+    if (!points.length) return;
+    const base = baselineY();
+    const spacing = all.length > 1 ? Math.abs(all[1].x[0] - all[0].x[0]) : Infinity;
+    const stems = points.map((p) => ({ x: [p.x[0], p.x[0]], y: [Number.isFinite(base) ? base : vp.height + FILL_EDGE, p.y[0]] }));
+    drawLines(ctx, stems, color, spacing < 4 ? 1 : 2);
+    if (spacing >= 6) {
+      const r = spacing >= 14 ? 4 : 2.5;
+      drawScatter(ctx, points.map((p) => p.x[0]), points.map((p) => p.y[0]), color, { radius: r });
+    }
   }
 
   // A draggable point under the finger: within a 44 px target on touch (Phase 6a).
@@ -482,8 +518,17 @@ export function createGraphView({
   // set becomes a 'scatter' entry in curves so its points can be tapped and traced.
   function drawData(state) {
     const sets = state.data ? state.data.sets : [];
+    let boxes = 0;
     for (const set of sets) {
       if (set.hidden) continue;
+      if (set.display === 'histogram') {
+        drawHistogram(set);
+        continue;
+      }
+      if (set.display === 'box') {
+        drawBoxPlot(set, boxes++, state.settings.quartiles);
+        continue;
+      }
       const on = { x: [], y: [] };
       const off = { x: [], y: [] };
       const bars = { x: [], lo: [], hi: [] };
@@ -511,6 +556,110 @@ export function createGraphView({
       drawScatter(ctx, on.x, on.y, set.color, { radius });
       curves.push({ rowId: `set:${set.id}`, kind: 'scatter', color: set.color, lines: [], points: all, result: { kind: 'scatter', set } });
     }
+  }
+
+  // A histogram of one column of a data set (Phase 7b): bars from the axis (the bottom
+  // edge on a log y axis) to each bin's count. Each bar's top is tappable.
+  function drawHistogram(set) {
+    const h = setHistogram(set);
+    if (!h) return;
+    const { start, width, counts } = h.hist;
+    const base = baselineY();
+    const tops = { x: [], y: [], i: [] };
+    const bins = [];
+    ctx.save();
+    ctx.beginPath();
+    counts.forEach((c, k) => {
+      const lo = start + k * width;
+      const hi = lo + width;
+      bins.push({ lo, hi, count: c });
+      if (c === 0) return;
+      const x0 = screenX(vp, lo);
+      const x1 = screenX(vp, hi);
+      const top = fillY(c);
+      if (!Number.isFinite(x0) || !Number.isFinite(x1) || !Number.isFinite(top)) return;
+      if (Math.max(x0, x1) < -2 || Math.min(x0, x1) > vp.width + 2) return;
+      ctx.rect(Math.min(x0, x1), Math.min(top, base), Math.abs(x1 - x0), Math.abs(base - top));
+      tops.x.push((x0 + x1) / 2);
+      tops.y.push(top);
+      tops.i.push(k);
+    });
+    ctx.fillStyle = set.color;
+    ctx.globalAlpha = 0.3;
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = set.color;
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+    ctx.restore();
+    curves.push({ rowId: `set:${set.id}`, kind: 'scatter', color: set.color, lines: [], points: tops, result: { kind: 'bins', set, bins, column: h.column } });
+  }
+
+  // A horizontal box plot of one column (Phase 7b), in a band near the top of the graph:
+  // its height and place are fixed on screen, its ends follow the x axis. Whiskers reach
+  // the furthest values within 1.5 × IQR; values beyond are drawn as rings.
+  const BOX_TOP = 84; // px: clear of the buttons along the top
+  const BOX_H = 26;
+  const BOX_GAP = 46;
+  function boxBand(index) {
+    const mid = BOX_TOP + BOX_H / 2 + index * BOX_GAP;
+    return { mid, top: mid - BOX_H / 2, bottom: mid + BOX_H / 2 };
+  }
+  function drawBoxPlot(set, index, method) {
+    const column = set.histColumn === 'y' ? 'y' : 'x';
+    const b = boxPlot(columnValues(set, column), method);
+    if (!b) return;
+    const { mid, top, bottom } = boxBand(index);
+    const X = (v) => screenX(vp, v);
+    const [q1, med, q3, lo, hi] = [b.q1, b.median, b.q3, b.lo, b.hi].map(X);
+    ctx.save();
+    ctx.strokeStyle = set.color;
+    ctx.fillStyle = set.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // Whiskers with end caps (parts at x ≤ 0 on a log axis are left out).
+    if (Number.isFinite(lo) && Number.isFinite(q1)) { ctx.moveTo(lo, mid); ctx.lineTo(q1, mid); ctx.moveTo(lo, mid - 7); ctx.lineTo(lo, mid + 7); }
+    if (Number.isFinite(hi) && Number.isFinite(q3)) { ctx.moveTo(q3, mid); ctx.lineTo(hi, mid); ctx.moveTo(hi, mid - 7); ctx.lineTo(hi, mid + 7); }
+    ctx.stroke();
+    if (Number.isFinite(q1) && Number.isFinite(q3)) {
+      ctx.globalAlpha = 0.2;
+      ctx.fillRect(q1, top, q3 - q1, BOX_H);
+      ctx.globalAlpha = 1;
+      ctx.strokeRect(q1, top, q3 - q1, BOX_H);
+    }
+    if (Number.isFinite(med)) {
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(med, top);
+      ctx.lineTo(med, bottom);
+      ctx.stroke();
+    }
+    ctx.restore();
+    const outX = b.outliers.map(X).filter(Number.isFinite);
+    drawScatter(ctx, outX, outX.map(() => mid), set.color, { radius: 4, hollow: true });
+    // The name, small, above the box.
+    ctx.save();
+    ctx.font = '11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = set.color;
+    const nameX = Math.min(Math.max(Number.isFinite(lo) ? lo : 8, 8), vp.width - 60);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = colors.bg;
+    const label = `${set.name} (${column})`;
+    ctx.strokeText(label, nameX, top - 3);
+    ctx.fillText(label, nameX, top - 3);
+    ctx.restore();
+    // Tappable: the five numbers and each outlier.
+    const marks = [['Minimum', b.min], ['Q1', b.q1], ['Median', b.median], ['Q3', b.q3], ['Maximum', b.max]];
+    if (b.lo !== b.min) marks.push(['Lower whisker', b.lo]);
+    if (b.hi !== b.max) marks.push(['Upper whisker', b.hi]);
+    const pts = { x: [], y: [], i: [] };
+    marks.forEach(([, v], k) => {
+      const sx = X(v);
+      if (Number.isFinite(sx)) { pts.x.push(sx); pts.y.push(mid); pts.i.push(k); }
+    });
+    curves.push({ rowId: `set:${set.id}`, kind: 'scatter', color: set.color, lines: [], points: pts, result: { kind: 'box', set, marks, mid, column } });
   }
 
   function drawBands(fit, r) {
@@ -560,6 +709,26 @@ export function createGraphView({
   function drawShading(row, r, analysis, angleFactor) {
     const a = fieldValue(analysis, row.intFrom);
     const b = fieldValue(analysis, row.intTo);
+    if (isFunctionOfX(r) && r.discrete) {
+      // Stems of a discrete distribution: shade bars at the whole numbers in the range,
+      // the probability the panel's Σ adds up (Phase 7b).
+      if (a === null || b === null) return;
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      const pts = stemPoints(r.f).filter((p) => p.t[0] >= lo - 1e-9 && p.t[0] <= hi + 1e-9);
+      if (!pts.length) return;
+      const step = Math.abs(screenX(vp, pts[0].t[0] + 1) - screenX(vp, pts[0].t[0]));
+      const w = Math.max(2, Math.min(step * 0.7, 18));
+      const base = baselineY();
+      ctx.save();
+      ctx.fillStyle = row.color;
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      for (const p of pts) ctx.rect(p.x[0] - w / 2, Math.min(p.y[0], base), w, Math.abs(base - p.y[0]));
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
     if (isFunctionOfX(r)) {
       // A Riemann sum replaces the smooth shading with its rectangles (Phase 6b).
       const rs = row.riemann ? riemannOf(row, r, analysis) : null;
@@ -707,6 +876,7 @@ export function createGraphView({
     const key = `${xMin}|${xMax}|${others.map((o) => o.id).join(',')}`;
     const hit = poiCache.map.get(rowId);
     if (hit && hit.key === key) return hit.value;
+    if (r.discrete) return []; // stems: roots and extrema of a step function mean nothing
     if (!allowCompute) return null;
     const d = r.derivative ? r.derivative() : null;
     const samples = Math.round(Math.min(800, Math.max(200, vp.width)));
@@ -840,6 +1010,17 @@ export function createGraphView({
         return { x: r.x, y: r.y, label: fmt(r.x, r.y) };
       case 'implicit':
         return { x: tr.x, y: tr.y, label: fmt(tr.x, tr.y) };
+      case 'bins': {
+        const b = r.bins[tr.i];
+        if (!b) return null;
+        const label = `${formatNumber(b.lo, 6)} ≤ ${r.column} < ${formatNumber(b.hi, 6)}: ${b.count}`;
+        return { x: (b.lo + b.hi) / 2, y: b.count, label };
+      }
+      case 'box': {
+        const m = r.marks[tr.i];
+        if (!m) return null;
+        return { x: m[1], y: toWorld(vp, 0, r.mid)[1], label: `${m[0]}: ${formatNumber(m[1], 8)}` };
+      }
       case 'scatter': {
         const p = r.set.points[tr.i];
         if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
@@ -879,9 +1060,12 @@ export function createGraphView({
     const [wx, wy] = toWorld(vp, sx, sy);
     switch (curve.kind) {
       case 'cartesian':
-      case 'function':
-        trace = { rowId: curve.rowId, kind: curve.kind, x: wx };
+      case 'function': {
+        // Stems of a discrete distribution: the nearest whole number.
+        const hit = curve.result.discrete ? nearestOnLines(curve.lines, sx, sy) : null;
+        trace = { rowId: curve.rowId, kind: curve.kind, x: hit ? hit.t : wx };
         break;
+      }
       case 'cartesian-x':
         trace = { rowId: curve.rowId, kind: curve.kind, y: wy };
         break;
@@ -1137,7 +1321,9 @@ export function createGraphView({
         }
         return;
       }
-      if (r.kind === 'cartesian' || r.kind === 'function') {
+      if ((r.kind === 'cartesian' || r.kind === 'function') && r.discrete) {
+        for (const p of stemPoints(r.f)) ys.push(r.f(p.t[0])); // the stems, at whole numbers
+      } else if (r.kind === 'cartesian' || r.kind === 'function') {
         for (let k = 0; k <= N; k++) {
           const y = r.f(xAt(k));
           if (Number.isFinite(y)) ys.push(y);
@@ -1173,28 +1359,34 @@ export function createGraphView({
         }
       }
     });
+    // Data sets count in full (their extremes aren't outliers to trim, unlike the odd
+    // spike in a sampled curve).
     const data = dataBounds(state.data ? state.data.sets : [], { positiveX: vp.logX, positiveY: vp.logY });
-    if (data) {
-      only1D = false;
-      xs.push(data.xMin, data.xMax);
-      ys.push(data.yMin, data.yMax);
-    }
+    if (data) only1D = false;
+    const toU = (x) => axisX(vp, x);
+    const toV = (y) => axisY(vp, y);
     // In axis coordinates; values a log axis can't show drop out here.
-    const us = xs.map((x) => axisX(vp, x)).filter(Number.isFinite);
-    const vs = ys.map((y) => axisY(vp, y)).filter(Number.isFinite);
-    if (!us.length && !vs.length) return;
+    const us = xs.map(toU).filter(Number.isFinite);
+    const vs = ys.map(toV).filter(Number.isFinite);
+    const du = data ? [data.xMin, data.xMax].map(toU).filter(Number.isFinite) : [];
+    const dv = data ? [data.yMin, data.yMax].map(toV).filter(Number.isFinite) : [];
+    if (!us.length && !vs.length && !du.length && !dv.length) return;
 
-    const range = (arr) => {
-      if (!arr.length) return null;
+    const range = (arr, extra) => {
+      if (!arr.length && !extra.length) return null;
       const s = [...arr].sort((p, q) => p - q);
-      const lo = s[Math.floor(s.length * 0.01)];
-      const hi = s[Math.ceil(s.length * 0.99) - 1];
+      let lo = s.length ? s[Math.floor(s.length * 0.01)] : Infinity;
+      let hi = s.length ? s[Math.ceil(s.length * 0.99) - 1] : -Infinity;
+      for (const v of extra) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
       return [lo, hi];
     };
     const pad = 0.08;
     const next = { ...vp };
-    const ry = range(vs);
-    const rx = range(us);
+    const ry = range(vs, dv);
+    const rx = range(us, du);
     if (ry) {
       const [lo, hi] = ry;
       const span = hi - lo;

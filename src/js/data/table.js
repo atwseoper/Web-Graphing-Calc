@@ -2,9 +2,15 @@
 //
 // A data set is
 //   { id, name, color, hidden, decimal: 'point'|'comma', xName, yName, hasSigma,
+//     display: 'scatter'|'histogram'|'box', histColumn: 'x'|'y', binWidth: number|null,
 //     points: [{ x, y, s, off }], fits: [...] }
 // x, y and s are numbers or null (a blank or unreadable cell). off: left out of fits.
+// display (Phase 7b): points, a histogram of one column (binWidth null = automatic) or a
+// box plot of that column.
 import { formatCell } from './number.js';
+import { columnValues, setHistogram } from './summary.js';
+
+export const DISPLAY_MODES = ['scatter', 'histogram', 'box'];
 
 export const MAX_SETS = 20;
 
@@ -12,6 +18,7 @@ export function newDataSet(id, color, name, points = [], extra = {}) {
   return {
     id, name: name || `Data ${id}`, color, hidden: false,
     decimal: 'point', xName: 'x', yName: 'y', hasSigma: false,
+    display: 'scatter', histColumn: 'x', binWidth: null,
     points, fits: [],
     ...extra,
   };
@@ -70,22 +77,45 @@ export function summary(set) {
 
 // Range of the plottable points of visible sets: { xMin, xMax, yMin, yMax } or null.
 // With σy, the error bars are included.
-// Range of the visible data (σy error bars included). On a log axis (positiveX /
-// positiveY) only values above 0 count, and an error bar reaching 0 counts its point only.
+// Range of the visible data: { xMin, xMax, yMin, yMax } or null. Points include their
+// σy error bars; a histogram spans its bins and runs from 0 to its tallest count; a box
+// plot spans its column's values and says nothing about y (yMin = Infinity, yMax =
+// −Infinity when only box plots are showing). On a log axis (positiveX / positiveY) only
+// values above 0 count, and an error bar reaching 0 counts its point only.
 export function dataBounds(sets, { positiveX = false, positiveY = false } = {}) {
   let xMin = Infinity;
   let xMax = -Infinity;
   let yMin = Infinity;
   let yMax = -Infinity;
+  const takeX = (v) => {
+    if (positiveX && !(v > 0)) return;
+    if (v < xMin) xMin = v;
+    if (v > xMax) xMax = v;
+  };
   for (const set of sets) {
     if (set.hidden) continue;
+    if (set.display === 'histogram') {
+      const h = setHistogram(set);
+      if (!h) continue;
+      const { start, width, counts, max } = h.hist;
+      takeX(start);
+      takeX(start + width * counts.length);
+      if (positiveX && !(start > 0)) takeX(width); // edges are multiples of the width: the first one above 0
+      const lowest = positiveY ? Math.min(...counts.filter((c) => c > 0)) : 0;
+      if (lowest < yMin) yMin = lowest;
+      if (max > yMax) yMax = max;
+      continue;
+    }
+    if (set.display === 'box') {
+      for (const v of columnValues(set, set.histColumn === 'y' ? 'y' : 'x')) takeX(v);
+      continue;
+    }
     for (const p of set.points) {
       if (!finite(p.x) || !finite(p.y)) continue;
       if ((positiveX && p.x <= 0) || (positiveY && p.y <= 0)) continue;
       const e = set.hasSigma && finite(p.s) ? Math.abs(p.s) : 0;
       const lo = positiveY && p.y - e <= 0 ? p.y : p.y - e;
-      if (p.x < xMin) xMin = p.x;
-      if (p.x > xMax) xMax = p.x;
+      takeX(p.x);
       if (lo < yMin) yMin = lo;
       if (p.y + e > yMax) yMax = p.y + e;
     }

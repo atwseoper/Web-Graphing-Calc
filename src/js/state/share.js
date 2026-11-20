@@ -18,8 +18,12 @@ export const PROJECT_APP = 'web-graphing-calc';
 function projectObject(state) {
   const o = JSON.parse(serialize(state));
   delete o.calc; // the Calc history is personal scratch work
-  const { angle, grid, xAxis, yAxis } = o.settings;
-  o.settings = { angle, grid, xAxis, yAxis };
+  const {
+    angle, grid, xAxis, yAxis, quartiles,
+  } = o.settings;
+  o.settings = {
+    angle, grid, xAxis, yAxis, quartiles,
+  };
   return o;
 }
 
@@ -54,7 +58,12 @@ export function openProject(current, json) {
       ...p,
       nextId: Math.max(p.nextId, current.nextId),
       settings: {
-        ...current.settings, angle: p.settings.angle, grid: p.settings.grid, xAxis: p.settings.xAxis, yAxis: p.settings.yAxis,
+        ...current.settings,
+        angle: p.settings.angle,
+        grid: p.settings.grid,
+        xAxis: p.settings.xAxis,
+        yAxis: p.settings.yAxis,
+        quartiles: p.settings.quartiles,
       },
       calc: current.calc,
       ui: { ...current.ui, tab: p.ui.tab },

@@ -4,7 +4,8 @@ import { RIEMANN_METHODS } from '../numerics/riemann.js';
 import {
   defaultState, defaultSolve, defaultData, newRow, newFit, FIT_MODELS, PALETTE, STATE_VERSION, MAX_ODE_POINTS,
 } from './defaults.js';
-import { newDataSet, MAX_SETS } from '../data/table.js';
+import { newDataSet, MAX_SETS, DISPLAY_MODES } from '../data/table.js';
+import { QUARTILE_METHODS } from '../data/summary.js';
 import { MAX_POINTS } from '../data/csv.js';
 
 export const STORAGE_KEY = 'graphcalc:v1';
@@ -123,6 +124,7 @@ export function deserialize(json) {
       pretty: oneOf(s.pretty, ['on', 'off'], 'on'),
       xAxis: oneOf(s.xAxis, AXIS_TYPES, 'linear'),
       yAxis: oneOf(s.yAxis, AXIS_TYPES, 'linear'),
+      quartiles: oneOf(s.quartiles, QUARTILE_METHODS, 'ti'),
     },
     calc: { history },
     solve: deserializeSolve(raw.solve),
@@ -183,6 +185,9 @@ function deserializeData(raw) {
       xName: str(r.xName, 'x').slice(0, 40) || 'x',
       yName: str(r.yName, 'y').slice(0, 40) || 'y',
       hasSigma: bool(r.hasSigma),
+      display: oneOf(r.display, DISPLAY_MODES, 'scatter'),
+      histColumn: oneOf(r.histColumn, ['x', 'y'], 'x'),
+      binWidth: num(r.binWidth) > 0 ? r.binWidth : null,
       fits,
     }));
   }
