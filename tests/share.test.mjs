@@ -63,11 +63,21 @@ test('opening a project keeps the user’s own keypad setting and Calc history',
   const { state, error } = openProject(current, projectJson(sample()));
   assert.equal(error, undefined);
   assert.equal(state.rows[0].text, 'y = a sin(x)');
-  assert.deepEqual(state.settings, { angle: 'deg', grid: 'polar', keypad: 'never' });
+  assert.deepEqual(state.settings, { angle: 'deg', grid: 'polar', keypad: 'never', xAxis: 'linear', yAxis: 'linear' });
   assert.equal(state.calc.history[0].input, '9');
   assert.equal(state.nextId, 50);
   assert.equal(state.data.sets[0].points[3].off, true);
-  assert.deepEqual(state.view, { cx: 1, cy: -2, scaleX: 40, scaleY: 40 });
+  assert.deepEqual(state.view, { cx: 1, cy: -2, scaleX: 40, scaleY: 40, logX: false, logY: false });
+});
+
+test('projects carry the axis types and a log view', () => {
+  const s = sample();
+  s.settings = { ...s.settings, xAxis: 'log', yAxis: 'log' };
+  s.view = { cx: 2, cy: -1, scaleX: 90, scaleY: 120, logX: true, logY: true };
+  const { state } = openProject(defaultState(), projectJson(s));
+  assert.equal(state.settings.xAxis, 'log');
+  assert.equal(state.settings.yAxis, 'log');
+  assert.deepEqual(state.view, s.view);
 });
 
 test('opening something that is not a project gives a clear error', () => {

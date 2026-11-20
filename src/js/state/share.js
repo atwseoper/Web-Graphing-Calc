@@ -1,7 +1,7 @@
 // Share links and project files. Pure module – no DOM access (uses the standard
 // CompressionStream / btoa globals, which browsers and Node both provide).
 //
-// A share link carries the whole project – rows, view, angle and grid, Solve inputs,
+// A share link carries the whole project – rows, view, angle, grid and axis types, Solve inputs,
 // data sets and fits – as compressed JSON in the URL fragment:
 //   …/graphcalc.html#g=z<base64url(deflate-raw(json))>
 // The fragment never reaches a server. Browsers without CompressionStream write
@@ -18,7 +18,8 @@ export const PROJECT_APP = 'web-graphing-calc';
 function projectObject(state) {
   const o = JSON.parse(serialize(state));
   delete o.calc; // the Calc history is personal scratch work
-  o.settings = { angle: o.settings.angle, grid: o.settings.grid };
+  const { angle, grid, xAxis, yAxis } = o.settings;
+  o.settings = { angle, grid, xAxis, yAxis };
   return o;
 }
 
@@ -52,7 +53,9 @@ export function openProject(current, json) {
     state: {
       ...p,
       nextId: Math.max(p.nextId, current.nextId),
-      settings: { ...current.settings, angle: p.settings.angle, grid: p.settings.grid },
+      settings: {
+        ...current.settings, angle: p.settings.angle, grid: p.settings.grid, xAxis: p.settings.xAxis, yAxis: p.settings.yAxis,
+      },
       calc: current.calc,
       ui: { ...current.ui, tab: p.ui.tab },
     },

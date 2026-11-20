@@ -95,7 +95,22 @@ test('angle and grid settings undo without touching the keypad setting', () => {
   t.store.update((s) => ({ ...s, settings: { ...s.settings, angle: 'deg' } }));
   t.store.update((s) => ({ ...s, settings: { ...s.settings, keypad: 'never' } }));
   t.undo();
-  assert.deepEqual(t.store.get().settings, { angle: 'rad', grid: 'cartesian', keypad: 'never', pretty: 'on' });
+  assert.deepEqual(t.store.get().settings, {
+    angle: 'rad', grid: 'cartesian', keypad: 'never', pretty: 'on', xAxis: 'linear', yAxis: 'linear',
+  });
+});
+
+test('axis types are undoable, one step each', () => {
+  const t = setup();
+  t.store.update((s) => ({ ...s, settings: { ...s.settings, xAxis: 'log' } }));
+  t.store.update((s) => ({ ...s, settings: { ...s.settings, yAxis: 'log' } }));
+  t.undo();
+  assert.equal(t.store.get().settings.xAxis, 'log');
+  assert.equal(t.store.get().settings.yAxis, 'linear');
+  t.undo();
+  assert.equal(t.store.get().settings.xAxis, 'linear');
+  t.redo();
+  assert.equal(t.store.get().settings.xAxis, 'log');
 });
 
 test('a new change clears redo', () => {

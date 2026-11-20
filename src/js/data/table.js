@@ -70,7 +70,9 @@ export function summary(set) {
 
 // Range of the plottable points of visible sets: { xMin, xMax, yMin, yMax } or null.
 // With σy, the error bars are included.
-export function dataBounds(sets) {
+// Range of the visible data (σy error bars included). On a log axis (positiveX /
+// positiveY) only values above 0 count, and an error bar reaching 0 counts its point only.
+export function dataBounds(sets, { positiveX = false, positiveY = false } = {}) {
   let xMin = Infinity;
   let xMax = -Infinity;
   let yMin = Infinity;
@@ -79,10 +81,12 @@ export function dataBounds(sets) {
     if (set.hidden) continue;
     for (const p of set.points) {
       if (!finite(p.x) || !finite(p.y)) continue;
+      if ((positiveX && p.x <= 0) || (positiveY && p.y <= 0)) continue;
       const e = set.hasSigma && finite(p.s) ? Math.abs(p.s) : 0;
+      const lo = positiveY && p.y - e <= 0 ? p.y : p.y - e;
       if (p.x < xMin) xMin = p.x;
       if (p.x > xMax) xMax = p.x;
-      if (p.y - e < yMin) yMin = p.y - e;
+      if (lo < yMin) yMin = lo;
       if (p.y + e > yMax) yMax = p.y + e;
     }
   }

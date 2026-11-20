@@ -75,8 +75,16 @@ function graphPage() {
         ['To keep the calculator on your phone\'s home screen, or as an app on a computer, open it from its web address and use your browser\'s ', b('Add to Home screen'), ' or ', b('Install app'), '. The installed app starts with no connection. When a new version is out, a ', b('New version · Reload'), ' message appears: tap Reload to switch (your work is kept).'],
       ),
     ),
+    section('Log axes',
+      ul(
+        ['In Settings, the ', b('x axis'), ' and ', b('y axis'), ' can each be ', b('Linear'), ' or ', b('Log'), ': one log axis gives a semi-log graph, both give log-log. Each decade (1 to 10, 10 to 100…) takes the same space.'],
+        'On log-log axes a power law y = a·xⁿ is a straight line of gradient n; with only y on a log scale, an exponential y = a·bˣ is a straight line.',
+        'Nothing at zero or below can be shown on a log axis, so those parts of graphs and data points are left out. Zooming and panning multiply rather than add.',
+        'Everything else works as usual: data, fits and bands, inequalities, implicit curves and slope fields (whose marks show the slope as it looks on the log axes). The polar grid isn\'t available with log axes.',
+      ),
+    ),
     section('Settings (gear)',
-      p('Degrees or radians, a Cartesian or polar grid, when the on-screen keypad appears, and clearing all expressions.'),
+      p('Degrees or radians, a Cartesian or polar grid, linear or log axes, when the on-screen keypad appears, and clearing all expressions.'),
     ),
   ];
 }
