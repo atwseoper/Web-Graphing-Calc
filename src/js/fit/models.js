@@ -194,9 +194,10 @@ function rebuild(node) {
 }
 
 // "y = 1.00211681802x − 0.262323073774": the fitted model with its parameter values,
-// as a row for the Graph tab.
+// as a row for the Graph tab. Values are rounded to the 12 significant figures that get
+// printed before simplifying, so 1.0000000000000002x² prints as x², not 1x².
 export function equationText(model, values) {
   const map = {};
-  model.params.forEach((p, k) => { map[p] = num(values[k]); });
+  model.params.forEach((p, k) => { map[p] = num(Number.isFinite(values[k]) ? Number(values[k].toPrecision(12)) : values[k]); });
   return `y = ${toText(rebuild(substitute(model.ast, map)))}`;
 }

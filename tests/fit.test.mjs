@@ -314,3 +314,38 @@ test('fit cache: custom fits re-run only when a definition they use changes', ()
   cache.all(state, analyse(rows(0.5, 'y'), { angle: 'deg' }));
   assert.equal(runs, 5);
 });
+
+test('runFit: rounding noise in exact fits is set to zero (no 2e-15x terms)', () => {
+  const quad = setOf([1, 2, 3, 4], [1, 4, 9, 16]);
+  for (const degree of [2, 3]) {
+    const r = runFit(A0, quad, newFit(1, '#000', 'poly', { degree }));
+    assert.equal(r.equation, 'y = x^2', `degree ${degree}`);
+    assert.deepEqual(r.values.map((v, k) => (k === 2 ? 0 : v)), new Array(degree + 1).fill(0));
+    assert.ok(!r.notes.some((n) => n.includes('poorly determined')), r.notes.join(' '));
+  }
+  const line = runFit(A0, setOf([1, 2, 3, 4], [3, 5, 7, 9]), newFit(1, '#000', 'poly', { degree: 2 }));
+  assert.equal(line.equation, 'y = 1 + 2x');
+
+  // Non-linear and custom linear models too.
+  const xs = Array.from({ length: 12 }, (_, i) => i * 0.5);
+  const sin = runFit(A0, setOf(xs, xs.map((x) => 2 * Math.sin(x))), newFit(1, '#000', 'sin'));
+  assert.equal(sin.equation, 'y = 2sin(x)');
+  const lin = runFit(A0, setOf(xs, xs.map((x) => 3 + 2 * x)), newFit(1, '#000', 'custom', { custom: 'a + b x + c sin(x)' }));
+  assert.equal(lin.equation, 'y = 3 + 2x');
+});
+
+test('runFit: real coefficients survive the rounding-noise clean-up', () => {
+  // Small but exactly determined.
+  const xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const small = runFit(A0, setOf(xs, xs.map((x) => 1 + 1e-9 * x * x)), newFit(1, '#000', 'poly', { degree: 2 }));
+  assert.ok(near(small.values[2], 1e-9, 1e-6), `a₂ = ${small.values[2]}`);
+  // Heavy cancellation: polynomials of years.
+  const years = runFit(A0, setOf([2000, 2001, 2002, 2003], [1, 4, 9, 16]), newFit(1, '#000', 'poly', { degree: 2 }));
+  assert.equal(years.equation, 'y = 3996001 - 3998x + x^2');
+  // Noisy data: nothing is rounding noise.
+  const noisy = runFit(A0, setOf([1, 2, 3, 4, 5], [1.1, 3.9, 9.2, 15.8, 25.1]), newFit(1, '#000', 'poly', { degree: 2 }));
+  assert.ok(noisy.values.every((v) => v !== 0));
+  // A tiny slope on a big offset is still a slope.
+  const offset = runFit(A0, setOf(xs, xs.map((x) => 1e6 + 1e-3 * x)), newFit(1, '#000', 'custom', { custom: 'a + b x' }));
+  assert.ok(near(offset.values[1], 1e-3, 1e-6));
+});
