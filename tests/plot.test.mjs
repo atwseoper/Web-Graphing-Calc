@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport,
+  createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport, resizeViewport,
   niceStep, minorStep, ticks, formatTick,
 } from '../src/js/plot/viewport.js';
 import {
@@ -165,4 +165,30 @@ test('formatTick shows enough digits to tell large and small ticks apart', () =>
   // Labels on one axis are all different.
   const labels = ticks(1e6, 3e6, 2e5).map((v) => formatTick(v, 2e5));
   assert.equal(new Set(labels).size, labels.length);
+});
+
+test('resizeViewport keeps the top edge when only the height changes', () => {
+  const v = createViewport({ width: 390, height: 378, cx: 1, cy: 2, scale: 40 });
+  const r = resizeViewport(v, 390, 490);
+  assert.equal(r.height, 490);
+  assert.deepEqual(toWorld(r, 195, 0), toWorld(v, 195, 0));
+  assert.equal(r.scaleX, v.scaleX);
+  assert.equal(resizeViewport(v, 390, 378), v);
+});
+
+test('resizeViewport keeps the centre when the width changes', () => {
+  const v = createViewport({ width: 390, height: 490, cx: 1, cy: 2, scale: 40 });
+  const r = resizeViewport(v, 444, 390);
+  assert.equal(r.width, 444);
+  assert.equal(r.height, 390);
+  assert.equal(r.cx, 1);
+  assert.equal(r.cy, 2);
+});
+
+test('a pan from a resized start view keeps the new size', () => {
+  // Graph view rebases a gesture's start view on resize, so a pan that began
+  // before the canvas grew still covers the whole canvas.
+  const start = createViewport({ width: 390, height: 378, scale: 40 });
+  const panned = panBy(resizeViewport(start, 390, 490), 10, 20);
+  assert.equal(panned.height, 490);
 });

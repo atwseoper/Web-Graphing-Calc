@@ -4,7 +4,7 @@
 // and the data sets from the Data tab (points and error bars). Points tied to sliders
 // get handles that can be dragged (Phase 6a, through the pointDrag controller).
 import {
-  createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, anchor, homeViewport,
+  createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, homeViewport, resizeViewport,
 } from '../plot/viewport.js';
 import {
   drawCartesianGrid, drawCartesianLabels, drawPolarGrid, drawPolarLabels,
@@ -108,14 +108,13 @@ export function createGraphView({
         frameX(x0, x1);
         return;
       }
-    } else if (vp.width !== w) {
-      // Width changed (rotation, sidebar): keep the centre where it is.
-      vp = { ...vp, width: w, height: hgt };
     } else {
-      // Only the height changed (sheet dragged): keep the top edge fixed.
-      const [wx, wy] = toWorld(vp, w / 2, 0);
-      vp = anchor({ ...vp, width: w, height: hgt }, wx, wy, w / 2, 0);
+      vp = resizeViewport(vp, w, hgt);
     }
+    // A pan or pinch in progress works from the view at its start; resize that too, or
+    // its next move would put back the old size and leave part of the canvas undrawn
+    // (e.g. touching the graph closes the keypad, so the graph grows mid-drag).
+    if (gesture && gesture.vp0) gesture.vp0 = resizeViewport(gesture.vp0, w, hgt);
     draw();
   }
   new ResizeObserver(resize).observe(canvas);
