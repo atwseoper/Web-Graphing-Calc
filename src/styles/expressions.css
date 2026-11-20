@@ -325,3 +325,20 @@
 .an-calc .an-block > .chip { justify-self: start; }
 .calc-opts[hidden] { display: none; }
 .expr-analysis .an-row .riemann-method { width: auto; flex: 0 1 auto; height: 40px; }
+/* Every Taylor coefficient (Phase 6c): scrolls inside the panel. */
+.taylor-table-wrap {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+.taylor-table-wrap[hidden] { display: none; }
+.taylor-table-note { margin: 0; padding: 8px 10px 4px; font-family: var(--mono); font-size: 0.82rem; color: var(--text-muted); }
+.taylor-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.85rem; }
+.taylor-table th, .taylor-table td { padding: 5px 10px; text-align: left; vertical-align: top; border-top: 1px solid var(--border); }
+.taylor-table th { position: sticky; top: 0; background: var(--surface); font-weight: 600; color: var(--text-muted); }
+.taylor-table td:first-child, .taylor-table th:first-child { width: 2.5em; text-align: right; color: var(--text-muted); }
+.taylor-table td:last-child { overflow-wrap: anywhere; }
+.taylor-table tr.is-zero td:last-child { color: var(--text-muted); }

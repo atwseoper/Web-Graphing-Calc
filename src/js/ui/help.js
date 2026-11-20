@@ -58,7 +58,7 @@ function graphPage() {
       ul(
         ['The coloured ', b('dot'), ' shows or hides the graph.'],
         [b('Analyse'), ' (the curve with a tangent): the derivative, the value, gradient and tangent at any x, and a definite integral, shaded on the graph. For polar graphs: the area enclosed.'],
-        ['Also in Analyse: a ', b('Riemann sum'), ' (left, right, midpoint or trapezium) over the integral\'s range, drawn as rectangles and compared with the exact integral; a ', b('Taylor polynomial'), ' up to degree 10, drawn dashed, which ', b('Add to graph'), ' turns into a row; and ', b('Secant → tangent'), ', whose ▷ shrinks h so the secant turns into the tangent.'],
+        ['Also in Analyse: a ', b('Riemann sum'), ' (left, right, midpoint or trapezium) over the integral\'s range, drawn as rectangles and compared with the exact integral; a ', b('Taylor polynomial'), ' up to degree 30, drawn dashed, with exact fractions wherever the coefficients are certainly rational (x³/6, not 0.1666666667) and a table of every coefficient; ', b('Add to graph'), ' turns it into a row; and ', b('Secant → tangent'), ', whose ▷ shrinks h so the secant turns into the tangent.'],
         [b('Table'), ': a table of values, with a start and step you can change.'],
         [b('×'), ' deletes the row.'],
       ),

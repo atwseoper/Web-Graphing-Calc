@@ -2,8 +2,10 @@
 //
 // taylor(ast, env, x0, n): the Taylor polynomial of degree n about x0 of the expression
 // `ast` in x. env is the analysis: { compileIn, functionDef, derivativeAst, angle }.
-// Returns { ok: true, coeffs } with coeffs[k] = f⁽ᵏ⁾(x0) / k!, so
-// P(x) = Σ coeffs[k]·(x − x0)^k, or { ok: false, reason } when there is none:
+// Returns { ok: true, coeffs, exact } with coeffs[k] = f⁽ᵏ⁾(x0) / k!, so
+// P(x) = Σ coeffs[k]·(x − x0)^k, and exact the same coefficients as exact fractions
+// (Rational) when they are certainly rational (taylor-exact.js, D57) or else null; or
+// { ok: false, reason } when there is none:
 //   'numeric'   a part has no exact derivative (gamma, nCr, nPr, !, a numerical d/dx),
 //               Q8; `name` says which ('gamma', 'nCr', '!' or null)
 //   'undefined' f or one of its derivatives is undefined at x0 (ln x at 0, √x at 0,
@@ -21,8 +23,10 @@ import { FUNCTIONS } from './builtins.js';
 import { realPow } from '../numerics/special.js';
 import { lnGamma } from '../numerics/stats.js';
 import { normalCdf, tCdfAt, chi2Cdf } from '../numerics/distributions.js';
+import { exactSeries } from './taylor-exact.js';
+import { factorialOf } from '../numerics/rational.js';
 
-export const TAYLOR_MAX_DEGREE = 10;
+export const TAYLOR_MAX_DEGREE = 30;
 const MAX_SERIES_TERMS = 10000;
 const DISPLAY = {
   ncr: 'nCr', npr: 'nPr', invnorm: 'invNorm', invt: 'invT', binompdf: 'binompdf', binomcdf: 'binomcdf',
@@ -37,7 +41,9 @@ class NoSeries extends Error {
   }
 }
 
-export function taylor(ast, env, x0, n) {
+// x0Exact: x0 as an exact Rational when it is certainly rational (from exactConstant),
+// or null.
+export function taylor(ast, env, x0, n, { x0Exact = null } = {}) {
   if (!Number.isInteger(n) || n < 0 || n > TAYLOR_MAX_DEGREE) throw new RangeError(`degree must be 0 to ${TAYLOR_MAX_DEGREE}`);
   if (!Number.isFinite(x0)) return { ok: false, reason: 'undefined', order: 0 };
   try {
@@ -45,7 +51,10 @@ export function taylor(ast, env, x0, n) {
     if (!s.every(Number.isFinite)) {
       return { ok: false, reason: 'undefined', order: s.findIndex((v) => !Number.isFinite(v)) };
     }
-    return { ok: true, coeffs: s };
+    let exact = x0Exact ? exactSeries(ast, env, x0Exact, n) : null;
+    // A check on the exact pass: it must agree with the decimal one.
+    if (exact && !exact.every((r, k) => agrees(r.toNumber(), s[k], s))) exact = null;
+    return { ok: true, coeffs: s, exact, x0Exact: exact ? x0Exact : null };
   } catch (e) {
     if (e instanceof NoSeries) {
       const out = { ok: false, reason: e.reason };
@@ -483,6 +492,13 @@ class SeriesEval {
   }
 }
 
+// Does an exact coefficient match its decimal one (to rounding, relative to the size of
+// the coefficients)?
+function agrees(exact, approx, all) {
+  const scale = Math.max(1e-300, ...all.map(Math.abs));
+  return Math.abs(exact - approx) <= 1e-9 * Math.max(Math.abs(approx), 1e-6 * scale);
+}
+
 export function evalTaylor(coeffs, x0, x) {
   const u = x - x0;
   let s = 0;
@@ -503,26 +519,112 @@ export function numberText(v) {
   return `${clean(mant)}*10^(${k})`;
 }
 
-// The polynomial as a row: y = c0 + c1(x − x0) + … with x0 = 0 giving powers of x.
-// Coefficients that round to 0 (below 1e−12 of the largest) are left out.
-export function taylorText(coeffs, x0) {
+// ---- terms: row text and display ------------------------------------------------------------
+const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+const sup = (k) => String(k).replace(/-/g, '⁻').replace(/\d/g, (d) => SUPERSCRIPT[d]);
+const BIG_DENOMINATOR = 1000000n; // above this, a factorial denominator is written m!
+
+// Text for a positive BigInt denominator: m! when it is exactly a big factorial.
+function denominatorText(q) {
+  if (q > BIG_DENOMINATOR) {
+    const m = factorialOf(q);
+    if (m !== null) return `${m}!`;
+  }
+  return q.toString();
+}
+
+// (x − x0) as row text and as display text.
+function baseOf(x0, x0Exact) {
+  if (x0 === 0) return { text: 'x', show: 'x' };
+  let mag;
+  let pos;
+  if (x0Exact) {
+    pos = x0Exact.sign() > 0;
+    mag = (pos ? x0Exact : x0Exact.neg()).toString();
+  } else {
+    pos = x0 > 0;
+    mag = numberText(Math.abs(x0));
+  }
+  return {
+    text: `(x ${pos ? '-' : '+'} ${mag})`,
+    show: `(x ${pos ? '−' : '+'} ${mag.replace(/\*10\^\((-?\d+)\)/, (m, k) => `×10${sup(k)}`)})`,
+  };
+}
+
+// The non-zero terms of the polynomial, each as { k, neg, text, show }: text is row text
+// for the parser (y = … + x^3/6), show is for reading (x³/6), both without the sign.
+// Exact coefficients are fractions (never turned into decimals); others are decimals to
+// 10 significant figures. Decimal coefficients that round to 0 (below 1e−12 of the
+// largest) are left out.
+export function taylorTerms(coeffs, x0, { exact = null, x0Exact = null } = {}) {
+  const base = baseOf(x0, exact ? x0Exact : null);
   const biggest = Math.max(...coeffs.map(Math.abs), 0);
-  const u = x0 === 0 ? 'x' : x0 > 0 ? `(x - ${numberText(x0)})` : `(x + ${numberText(-x0)})`;
   const terms = [];
   coeffs.forEach((c, k) => {
+    const powText = k === 0 ? '' : k === 1 ? base.text : `${base.text}^${k}`;
+    const powShow = k === 0 ? '' : k === 1 ? base.show : `${base.show}${sup(k)}`;
+    const joinNum = (num, pow) => (pow === '' ? num : `${num}${pow.startsWith('(') ? '' : ' '}${pow}`);
+    if (exact) {
+      const r = exact[k];
+      if (r.isZero()) return;
+      const neg = r.sign() < 0;
+      const p = neg ? -r.p : r.p;
+      const numText = p === 1n && k > 0 ? powText : joinNum(p.toString(), powText);
+      const numShow = p === 1n && k > 0 ? powShow : joinNum(p.toString(), powShow);
+      if (r.q === 1n) {
+        terms.push({ k, neg, text: numText, show: numShow });
+      } else {
+        const d = denominatorText(r.q);
+        terms.push({ k, neg, text: `${numText}/${d}`, show: `${numShow}/${d}` });
+      }
+      return;
+    }
     if (c === 0 || Math.abs(c) <= 1e-12 * biggest) return;
     const neg = c < 0;
     const mag = Math.abs(c);
-    let t;
-    if (k === 0) t = numberText(mag);
-    else {
-      const pow = k === 1 ? u : `${u}^${k}`;
-      t = mag === 1 ? pow : `${numberText(mag)}${pow.startsWith('(') ? '' : ' '}${pow}`;
-    }
-    terms.push({ neg, t });
+    const n = numberText(mag);
+    const nShow = n.replace(/\*10\^\((-?\d+)\)/, (m, e) => `×10${sup(e)}`);
+    terms.push({
+      k, neg,
+      text: mag === 1 && k > 0 ? powText : joinNum(n, powText),
+      show: mag === 1 && k > 0 ? powShow : joinNum(nShow, powShow),
+    });
   });
-  if (!terms.length) return 'y = 0';
-  let text = `y = ${terms[0].neg ? '-' : ''}${terms[0].t}`;
-  for (const { neg, t } of terms.slice(1)) text += ` ${neg ? '-' : '+'} ${t}`;
-  return text;
+  return terms;
+}
+
+function joinTerms(terms, key, minus) {
+  if (!terms.length) return '0';
+  let out = `${terms[0].neg ? minus : ''}${terms[0][key]}`;
+  for (const t of terms.slice(1)) out += ` ${t.neg ? minus : '+'} ${t[key]}`;
+  return out;
+}
+
+// The polynomial as a row: y = c0 + c1(x − x0) + …, exact fractions where certain.
+export function taylorText(coeffs, x0, opts = {}) {
+  return `y = ${joinTerms(taylorTerms(coeffs, x0, opts), 'text', '-')}`;
+}
+
+// The polynomial for reading in the panel. With more than `full` non-zero terms, the
+// first 3 and last 2, with … between: { text, shown, total }.
+export function taylorSummary(coeffs, x0, opts = {}, full = 6) {
+  const terms = taylorTerms(coeffs, x0, opts);
+  if (terms.length <= full) return { text: joinTerms(terms, 'show', '−'), shown: terms.length, total: terms.length };
+  const head = joinTerms(terms.slice(0, 3), 'show', '−');
+  const tail = terms.slice(-2).map((t) => ` ${t.neg ? '−' : '+'} ${t.show}`).join('');
+  return { text: `${head} + … ${tail.trimStart()}`, shown: 5, total: terms.length };
+}
+
+// Each coefficient c_k for the table: { k, show, exact } – a fraction when exact, else a
+// decimal to 10 significant figures.
+export function taylorCoefficients(coeffs, { exact = null } = {}) {
+  return coeffs.map((c, k) => {
+    if (exact) {
+      const r = exact[k];
+      const show = r.q === 1n ? r.p.toString() : `${r.p}/${denominatorText(r.q)}`;
+      return { k, show: show.replace(/^-/, '−'), exact: true };
+    }
+    const n = numberText(c).replace(/\*10\^\((-?\d+)\)/, (m, e) => `×10${sup(e)}`);
+    return { k, show: n.replace(/^-/, '−'), exact: false };
+  });
 }

@@ -9,7 +9,7 @@ import { sliderRange, snapToStep, valueText } from '../expr/slider.js';
 import {
   riemannOf, taylorOf, secantOf, DEFAULT_RIEMANN_N, DEFAULT_TAYLOR_DEGREE, DEFAULT_SECANT_H,
 } from '../expr/calculus.js';
-import { taylorText } from '../expr/taylor.js';
+import { taylorText, taylorSummary, taylorCoefficients } from '../expr/taylor.js';
 import { integrate } from '../numerics/integrate.js';
 import { discreteSum } from '../numerics/distributions.js';
 import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
@@ -33,6 +33,7 @@ export function createExprList({
   listEl, addBtn, store, graph, secantPlayer = null,
 }) {
   const els = new Map(); // row id -> element refs
+  const taylorOpen = new Set(); // row ids whose Taylor coefficient table is open
   const lastEdit = new Map(); // row id -> timestamp
   let errorTimer = 0;
   let latest = null; // { state, analysis }
@@ -239,7 +240,19 @@ export function createExprList({
       h('span', { class: 'an-label' }, 'degree'), taylorN, h('span', { class: 'an-label' }, 'about x ='), taylorAt);
     const taylorOut = h('div', { class: 'an-out', hidden: true });
     const taylorAdd = h('button', { type: 'button', class: 'chip', hidden: true, onClick: () => addTaylorRow(id) }, 'Add to graph');
-    const taylorBlock = h('div', { class: 'an-block' }, h('div', { class: 'an-row' }, taylorBtn, taylorOpts), taylorOut, taylorAdd);
+    // All the coefficients, when the summary leaves some out (Phase 6c). Not saved.
+    const taylorMore = h('button', {
+      type: 'button', class: 'chip taylor-more', hidden: true, 'aria-expanded': 'false',
+      onClick: () => {
+        if (taylorOpen.has(id)) taylorOpen.delete(id);
+        else taylorOpen.add(id);
+        if (latest) render(latest.state, latest.analysis);
+      },
+    });
+    const taylorTable = h('div', { class: 'taylor-table-wrap', hidden: true });
+    const taylorActions = h('div', { class: 'an-row' }, taylorAdd, taylorMore);
+    const taylorBlock = h('div', { class: 'an-block' },
+      h('div', { class: 'an-row' }, taylorBtn, taylorOpts), taylorOut, taylorActions, taylorTable);
     const secantBtn = toggleChip('Secant → tangent', 'secant', () => secantPlayer && secantPlayer.stop(id));
     const secantH = miniInput('Secant h', 'secantH');
     const secantPlay = h('button', {
@@ -344,7 +357,7 @@ export function createExprList({
       analysisBtn, analysisPanel, derivRow, derivText, derivBtn, atRow, atInput, atOut,
       intRow, intLabel, intVar, intFrom, intTo, intOut, poiBlock, poiHead, poiList, poiKey: '',
       calcBlocks, riemannSel, riemannN, riemannNLabel, riemannOut,
-      taylorBtn, taylorN, taylorAt, taylorOpts, taylorOut, taylorAdd,
+      taylorBtn, taylorN, taylorAt, taylorOpts, taylorOut, taylorAdd, taylorMore, taylorTable, taylorTableKey: '',
       secantBtn, secantH, secantPlay, secantOpts, secantOut,
     };
   }
@@ -751,8 +764,6 @@ export function createExprList({
   const METHOD_NAMES = { left: 'Left', right: 'Right', mid: 'Midpoint', trap: 'Trapezium' };
   const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
   const sub = (k) => String(k).replace(/\d/g, (d) => SUBSCRIPT[d]);
-  const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
-  const powers = (text) => text.replace(/\^(\d+)/g, (m, k) => k.replace(/\d/g, (d) => SUPERSCRIPT[d]));
 
   function setOut(el, text, isError = false) {
     setText(el, text);
@@ -796,10 +807,22 @@ export function createExprList({
     else if (tp.error) setOut(e.taylorOut, tp.error, true);
     else if (!tp.res.ok) setOut(e.taylorOut, taylorProblem(tp, r), true);
     else {
-      const text = taylorText(tp.res.coeffs, tp.x0).replace(/^y = /, '');
-      const shown = text.length > 220 ? `${text.slice(0, 220)}…` : text;
-      setOut(e.taylorOut, `P${sub(tp.n)}(x) = ${powers(pretty(shown))}`);
+      const opts = { exact: tp.res.exact, x0Exact: tp.res.x0Exact };
+      const summary = taylorSummary(tp.res.coeffs, tp.x0, opts);
+      setOut(e.taylorOut, `P${sub(tp.n)}(x) = ${summary.text}`);
       canAdd = true;
+      // The table: every coefficient, when the summary leaves terms out.
+      const more = summary.shown < summary.total;
+      const open = more && taylorOpen.has(row.id);
+      setHidden(e.taylorMore, !more);
+      setText(e.taylorMore, open ? 'Hide coefficients' : `Show all ${tp.n + 1} coefficients`);
+      e.taylorMore.setAttribute('aria-expanded', String(open));
+      setHidden(e.taylorTable, !open);
+      if (open) renderTaylorTable(e, tp, opts);
+    }
+    if (!canAdd) {
+      setHidden(e.taylorMore, true);
+      setHidden(e.taylorTable, true);
     }
     setHidden(e.taylorAdd, !canAdd);
     e.taylorAdd.disabled = !canAdd;
@@ -830,6 +853,23 @@ export function createExprList({
     }
   }
 
+  // P(x) = Σ c_k (x − x0)^k with a row per k: exact fractions, or decimals where the
+  // coefficient isn't certainly rational.
+  function renderTaylorTable(e, tp, opts) {
+    const coefs = taylorCoefficients(tp.res.coeffs, opts);
+    const base = tp.x0 === 0 ? 'xᵏ' : `(x − x₀)ᵏ, x₀ = ${opts.x0Exact ? opts.x0Exact.toString() : fmt(tp.x0, 10)}`;
+    const key = `${base}|${coefs.map((c) => c.show).join(',')}`;
+    if (e.taylorTableKey === key) return;
+    e.taylorTableKey = key;
+    e.taylorTable.replaceChildren(
+      h('p', { class: 'taylor-table-note' }, `P(x) = Σ cₖ ${base}`, tp.res.exact ? ' · exact' : ''),
+      h('table', { class: 'taylor-table' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'k'), h('th', { scope: 'col' }, 'cₖ'))),
+        h('tbody', {}, ...coefs.map((c) => h('tr', { class: c.show === '0' ? 'is-zero' : '' },
+          h('td', {}, String(c.k)), h('td', {}, c.show))))),
+    );
+  }
+
   function taylorProblem(tp, r) {
     const fname = r.kind === 'function' ? `${r.name}(x)` : 'This function';
     const { res } = tp;
@@ -852,7 +892,7 @@ export function createExprList({
     const r = i >= 0 ? latest.analysis.rows[i] : null;
     const tp = r ? taylorOf(row, r, latest.analysis) : null;
     if (!tp || !tp.res || !tp.res.ok) return;
-    insertRow(id, taylorText(tp.res.coeffs, tp.x0), { focus: false });
+    insertRow(id, taylorText(tp.res.coeffs, tp.x0, { exact: tp.res.exact, x0Exact: tp.res.x0Exact }), { focus: false });
   }
 
   function playSecant(id) {
