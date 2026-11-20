@@ -50,6 +50,15 @@ export function anchor(vp, wx, wy, sx, sy) {
   return { ...vp, cx: wx - (sx - vp.width / 2) / vp.scaleX, cy: wy + (sy - vp.height / 2) / vp.scaleY };
 }
 
+// The same view on a canvas of a new size. A width change (rotation, side panel)
+// keeps the centre; a height-only change (bottom sheet moved) keeps the top edge.
+export function resizeViewport(vp, width, height) {
+  if (vp.width === width && vp.height === height) return vp;
+  if (vp.width !== width) return { ...vp, width, height };
+  const [wx, wy] = toWorld(vp, width / 2, 0);
+  return anchor({ ...vp, width, height }, wx, wy, width / 2, 0);
+}
+
 // The default view for a given size: origin centred, equal scales, about ±6 units on the short side.
 export function homeViewport(width, height) {
   const scale = Math.min(80, Math.max(20, Math.min(width, height) / 12));
