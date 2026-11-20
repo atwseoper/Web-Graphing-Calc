@@ -2,6 +2,7 @@
 import {
   gamma, nCr, nPr, mod, sinExact, cosExact, tanExact, sinDeg, cosDeg, tanDeg,
 } from '../numerics/special.js';
+import { DISTRIBUTION_FUNCTIONS } from '../numerics/distributions.js';
 
 const R2D = 180 / Math.PI;
 
@@ -53,6 +54,8 @@ export const FUNCTIONS = {
   gamma: plain([1, 1], gamma),
   ncr: plain([2, 2], nCr),
   npr: plain([2, 2], nPr),
+  // Probability distributions (Phase 7b): reserved words like sum.
+  ...Object.fromEntries(Object.entries(DISTRIBUTION_FUNCTIONS).map(([name, d]) => [name, plain(d.arity, d.fn)])),
 };
 
 // Alternative spellings accepted when typing.
@@ -60,6 +63,7 @@ export const ALIASES = {
   arcsin: 'asin', arccos: 'acos', arctan: 'atan',
   arsinh: 'asinh', arcosh: 'acosh', artanh: 'atanh',
   sgn: 'sign', ncr: 'ncr', npr: 'npr',
+  'χ2pdf': 'chi2pdf', 'χ2cdf': 'chi2cdf',
 };
 
 export const CONSTANTS = {

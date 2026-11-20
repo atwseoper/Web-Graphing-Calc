@@ -239,7 +239,7 @@ function compileSym(node, ctx) {
 function checkArity(name, arity, n, node) {
   const [min, max] = arity;
   if (n < min || n > max) {
-    const expected = min === max ? `${min}` : max === Infinity ? `at least ${min}` : `${min} or ${max}`;
+    const expected = min === max ? `${min}` : max === Infinity ? `at least ${min}` : max === min + 1 ? `${min} or ${max}` : `${min} to ${max}`;
     throw new ExprError(
       `${name} takes ${expected} argument${expected === '1' ? '' : 's'}, not ${n}`,
       node.nameStart ?? node.start, node.nameEnd ?? node.end,

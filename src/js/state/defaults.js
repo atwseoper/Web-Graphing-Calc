@@ -74,7 +74,9 @@ export function defaultState() {
     nextId: 3,
     rows: [newRow(1, PALETTE[0], 'y = sin(x)'), newRow(2, PALETTE[1])],
     view: null, // null = home view for the current screen size
-    settings: { angle: 'rad', grid: 'cartesian', keypad: 'auto', pretty: 'on', xAxis: 'linear', yAxis: 'linear' },
+    settings: {
+      angle: 'rad', grid: 'cartesian', keypad: 'auto', pretty: 'on', xAxis: 'linear', yAxis: 'linear', quartiles: 'ti',
+    },
     calc: { history: [] },
     solve: defaultSolve(),
     data: defaultData(),

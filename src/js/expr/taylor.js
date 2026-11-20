@@ -19,10 +19,15 @@
 // exponentially: the 10th derivative of 1/(1 + x²) has millions of terms – D52.)
 import { FUNCTIONS } from './builtins.js';
 import { realPow } from '../numerics/special.js';
+import { lnGamma } from '../numerics/stats.js';
+import { normalCdf, tCdfAt, chi2Cdf } from '../numerics/distributions.js';
 
 export const TAYLOR_MAX_DEGREE = 10;
 const MAX_SERIES_TERMS = 10000;
-const DISPLAY = { ncr: 'nCr', npr: 'nPr' };
+const DISPLAY = {
+  ncr: 'nCr', npr: 'nPr', invnorm: 'invNorm', invt: 'invT', binompdf: 'binompdf', binomcdf: 'binomcdf',
+  poissonpdf: 'poissonpdf', poissoncdf: 'poissoncdf',
+};
 
 class NoSeries extends Error {
   constructor(reason, extra = {}) {
@@ -343,11 +348,72 @@ class SeriesEval {
       case 'gamma':
       case 'ncr':
       case 'npr':
+      case 'invnorm':
+      case 'invt':
+      case 'binompdf':
+      case 'binomcdf':
+      case 'poissonpdf':
+      case 'poissoncdf':
         if (this.n === 0 || args.every((s) => this.isConst(s))) return this.const(v0());
         throw new NoSeries('numeric', { name: DISPLAY[name] || name });
+      case 'normalpdf':
+      case 'normalcdf':
+      case 'tpdf':
+      case 'tcdf':
+      case 'chi2pdf':
+      case 'chi2cdf':
+        return this.distribution(name, args, v0);
       default:
         throw new NoSeries('complex');
     }
+  }
+
+  // Continuous distributions with constant parameters (Phase 7b): the pdf from exp and
+  // powers, the cdf by integrating the pdf along its argument. Discrete distributions and
+  // non-constant parameters have no series here.
+  distribution(name, args, v0) {
+    // Where the parameters start: after x for a pdf; after x, or after a and b, for a cdf
+    // (normalcdf(x), normalcdf(a, b, μ, σ); tcdf(x, ν), tcdf(a, b, ν); chi2cdf likewise).
+    let firstParam = 1;
+    if (name === 'normalcdf') firstParam = args.length === 1 ? 1 : 2;
+    else if (name.endsWith('cdf')) firstParam = args.length === 2 ? 1 : 2;
+    if (!args.slice(firstParam).every((s) => this.isConst(s))) throw new NoSeries('numeric', { name });
+    const p = args.slice(firstParam).map((s) => s[0]);
+    const family = name.startsWith('normal') ? 'normal' : name.startsWith('chi2') ? 'chi2' : 't';
+    // pdf(u) as a series, for the parameters p.
+    const pdf = (u) => {
+      if (family === 'normal') {
+        const mu = p[0] ?? 0;
+        const s = p[1] ?? 1;
+        if (!(s > 0)) throw this.undefinedAt(0);
+        const z = this.scale(this.sub(u, this.const(mu)), 1 / s);
+        return this.scale(this.exp(this.scale(this.mul(z, z), -0.5)), 1 / (s * Math.sqrt(2 * Math.PI)));
+      }
+      if (family === 't') {
+        const nu = p[0];
+        if (!(nu > 0)) throw this.undefinedAt(0);
+        const c = Math.exp(lnGamma((nu + 1) / 2) - lnGamma(nu / 2) - 0.5 * Math.log(nu * Math.PI));
+        return this.scale(this.powConst(this.add(this.const(1), this.scale(this.mul(u, u), 1 / nu)), -(nu + 1) / 2), c);
+      }
+      const h = p[0] / 2;
+      if (!(h > 0)) throw this.undefinedAt(0);
+      if (!(u[0] > 0)) {
+        if (this.isConst(u)) return this.const(u[0] < 0 ? 0 : NaN);
+        throw this.undefinedAt(u[0] < 0 ? 1 : 0);
+      }
+      const c = Math.exp(-h * Math.LN2 - lnGamma(h));
+      return this.scale(this.mul(this.powConst(u, h - 1), this.exp(this.scale(u, -0.5))), c);
+    };
+    const cdfAt = (v) => (family === 'normal' ? normalCdf(v, p[0] ?? 0, p[1] ?? 1) : family === 't' ? tCdfAt(v, p[0]) : chi2Cdf(v, p[0]));
+    const cdf = (u) => {
+      if (this.isConst(u)) return this.const(cdfAt(u[0]));
+      return this.integral(cdfAt(u[0]), this.mul(this.deriv(u), pdf(u)));
+    };
+    if (name.endsWith('pdf')) return pdf(args[0]);
+    const limits = args.slice(0, firstParam);
+    const r = limits.length === 1 ? cdf(limits[0]) : this.sub(cdf(limits[1]), cdf(limits[0]));
+    r[0] = v0(); // the value as the function itself works it out (tails kept accurate)
+    return r;
   }
 
   // User functions: their bodies with the parameters bound to the argument series.

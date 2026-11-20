@@ -10,6 +10,9 @@ import {
   newDataSet, blankPoint, summary, dataBounds, nameFromFile, toCsv, MAX_SETS,
 } from '../data/table.js';
 import { nextColor, usedColors } from '../state/defaults.js';
+import {
+  columnValues, pairs, describe, correlation, setHistogram, QUARTILE_METHODS, QUARTILE_NAMES,
+} from '../data/summary.js';
 import { downloadText, copyText, flashLabel, fileNameFor } from './export.js';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -31,6 +34,33 @@ export function localeDecimal() {
 }
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : many}`;
+
+const STAT_ROWS = [
+  ['n', 'n'], ['mean', 'Mean'], ['median', 'Median'], ['sd', 'SD (sample, s)'], ['sdPop', 'SD (population, σ)'],
+  ['min', 'Min'], ['q1', 'Q1'], ['q3', 'Q3'], ['max', 'Max'], ['iqr', 'IQR'], ['sum', 'Sum'],
+];
+
+// Statistics of a data set's columns: { cols: [{ name, d }], r, pairs, off }.
+function statsOf(set, method) {
+  const cols = [];
+  for (const c of ['x', 'y']) {
+    const v = columnValues(set, c);
+    if (v.length) cols.push({ name: c === 'x' ? set.xName || 'x' : set.yName || 'y', d: describe(v, method) });
+  }
+  const pr = pairs(set);
+  return { cols, r: correlation(pr.x, pr.y), pairs: pr.x.length, off: set.points.filter((p) => p.off).length };
+}
+
+// Tab-separated statistics for pasting into a spreadsheet.
+export function statsText(set, method) {
+  const st = statsOf(set, method);
+  const d = set.decimal || 'point';
+  const n = (v) => (Number.isFinite(v) ? formatCell(v, d) : '');
+  const lines = [['Data set', set.name], ['Quartiles', QUARTILE_NAMES[method]], [], ['', ...st.cols.map((c) => c.name)]];
+  for (const [key, label] of STAT_ROWS) lines.push([label, ...st.cols.map((c) => (key === 'n' ? String(c.d.n) : n(c.d[key])))]);
+  if (st.cols.length === 2) lines.push(['r', n(st.r)]);
+  return `${lines.map((l) => l.join('\t')).join('\n')}\n`;
+}
 
 export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel }) {
   // Which axes are log (Phase 7a): framing a data set then counts only values above 0.
@@ -173,6 +203,59 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     deleteSet(set.id);
   });
   const metaLine = h('p', { class: 'set-meta', 'aria-live': 'polite' });
+
+  // ---- display mode and statistics (Phase 7b) ------------------------------------------
+  const seg = (label, options, onPick) => {
+    const btns = {};
+    const el = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': label },
+      ...options.map(([v, text]) => {
+        btns[v] = h('button', { type: 'button', role: 'radio', 'aria-checked': 'false', onClick: () => onPick(v) }, text);
+        return btns[v];
+      }));
+    return { el, btns, set: (v) => { for (const [k, b] of Object.entries(btns)) b.setAttribute('aria-checked', String(k === v)); } };
+  };
+  const withSet = (fn) => (v) => {
+    const set = latest && activeSet(latest);
+    if (set) updateSet(set.id, (st) => fn(st, v));
+  };
+  const displaySeg = seg('Show the data set as', [['scatter', 'Points'], ['histogram', 'Histogram'], ['box', 'Box plot']],
+    withSet((st, v) => ({ ...st, display: v })));
+  const columnSeg = seg('Column to show', [['x', 'x'], ['y', 'y']], withSet((st, v) => ({ ...st, histColumn: v })));
+  const binInput = h('input', {
+    class: 'mini-input bin-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Bin width',
+  });
+  binInput.addEventListener('input', () => {
+    const set = latest && activeSet(latest);
+    if (!set) return;
+    const t = binInput.value.trim();
+    const v = t ? parseNumber(t, set.decimal) : null;
+    binInput.classList.toggle('is-invalid', !!t && !(v > 0));
+    if (!t || v > 0) updateSet(set.id, (st) => ({ ...st, binWidth: t ? v : null }));
+  });
+  const binLabel = h('label', { class: 'an-label bin-label' }, 'Bin width', binInput);
+  const displayNote = h('p', { class: 'an-note display-note' });
+  const displayOpts = h('div', { class: 'display-opts' }, h('span', { class: 'an-label' }, 'Column'), columnSeg.el, binLabel);
+  const displayBox = h('div', { class: 'display-box' }, displaySeg.el, displayOpts, displayNote);
+
+  const statsBody = h('tbody');
+  const statsHeadRow = h('tr');
+  const statsTable = h('table', { class: 'stats-table' }, h('thead', {}, statsHeadRow), statsBody);
+  const quartileSeg = seg('Quartile method', QUARTILE_METHODS.map((m) => [m, m === 'ti' ? 'TI-84' : 'Interpolated']),
+    (v) => store.update((st) => ({ ...st, settings: { ...st.settings, quartiles: v } })));
+  const quartileNote = h('p', { class: 'an-note' });
+  const statsEmpty = h('p', { class: 'an-note' });
+  const statsCopy = h('button', { type: 'button', class: 'text-btn' }, 'Copy statistics');
+  statsCopy.addEventListener('click', async () => {
+    const set = latest && activeSet(latest);
+    if (!set) return;
+    flashLabel(statsCopy, (await copyText(statsText(set, latest.settings.quartiles))) ? 'Copied' : 'Copy failed');
+  });
+  const statsCard = h('details', { class: 'stats-card' },
+    h('summary', {}, 'Statistics'),
+    statsTable, statsEmpty,
+    h('div', { class: 'quartile-row' }, h('span', { class: 'an-label' }, 'Quartiles'), quartileSeg.el),
+    quartileNote,
+    h('div', { class: 'table-foot' }, statsCopy));
   const setHead = h('div', { class: 'set-head' }, swatch, setName, frameBtn, deleteBtn);
 
   const typedAt = new WeakMap(); // cell input -> time of the last keystroke
@@ -218,7 +301,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   const exportRow = h('div', { class: 'table-foot export-row' }, h('span', { class: 'an-label' }, 'Export:'), downloadBtn, copyBtn);
   const tableBox = h('section', { class: 'data-table-box', 'aria-label': 'Data table' },
     h('div', { class: 'table-scroll' }, table), tableStatus, tableFoot, exportRow);
-  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, fitPanel ? fitPanel.el : '', tableBox);
+  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, displayBox, statsCard, fitPanel ? fitPanel.el : '', tableBox);
 
   const wrap = h('div', { class: 'data' }, setBar, startBox, importBox, setBox);
   root.replaceChildren(wrap);
@@ -347,6 +430,9 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
       xName: imp.cols.x < 0 ? 'n' : colName(imp.cols.x, 'x').slice(0, 40),
       yName: colName(imp.cols.y, 'y').slice(0, 40),
       hasSigma: imp.cols.s >= 0,
+      // A single column of values goes in y, with x numbering the rows: histograms and
+      // box plots then show y.
+      histColumn: imp.cols.x < 0 ? 'y' : 'x',
     });
     if (id === null) return;
     imp = null;
@@ -609,16 +695,68 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     else deleteBtn.innerHTML = ICONS.trash;
 
     const sm = summary(set);
-    const bits = [plural(sm.used, 'point') + (sm.off || sm.incomplete ? ' used' : '')];
-    if (sm.off) bits.push(`${sm.off} left out`);
-    if (sm.incomplete) bits.push(`${sm.incomplete} incomplete`);
+    const bits = [];
+    if (set.display === 'histogram' || set.display === 'box') {
+      // One column is on show: count its values (a single column needs no pairs).
+      const col = set.histColumn === 'y' ? 'y' : 'x';
+      bits.push(`${plural(columnValues(set, col).length, 'value')} of ${col === 'x' ? set.xName || 'x' : set.yName || 'y'}`);
+      if (sm.off) bits.push(`${sm.off} left out`);
+    } else {
+      bits.push(plural(sm.used, 'point') + (sm.off || sm.incomplete ? ' used' : ''));
+      if (sm.off) bits.push(`${sm.off} left out`);
+      if (sm.incomplete) bits.push(`${sm.incomplete} incomplete`);
+    }
     if (set.hidden) bits.push('hidden');
     setText(metaLine, bits.join(' · '));
+
+    renderDisplay(state, set);
+    renderStats(state, set);
 
     sigmaBtn.setAttribute('aria-pressed', String(set.hasSigma));
     for (const [v, b] of Object.entries(decBtns)) b.setAttribute('aria-checked', String(set.decimal === v));
     if (fitPanel) fitPanel.render(state, set);
     renderTable(set);
+  }
+
+  function renderDisplay(state, set) {
+    const mode = set.display || 'scatter';
+    displaySeg.set(mode);
+    columnSeg.set(set.histColumn === 'y' ? 'y' : 'x');
+    setText(columnSeg.btns.x, set.xName || 'x');
+    setText(columnSeg.btns.y, set.yName || 'y');
+    setHidden(displayOpts, mode === 'scatter');
+    setHidden(binLabel, mode !== 'histogram');
+    const h0 = mode === 'histogram' ? setHistogram(set) : null;
+    if (document.activeElement !== binInput) {
+      binInput.value = set.binWidth > 0 ? formatCell(set.binWidth, set.decimal) : '';
+      binInput.classList.remove('is-invalid');
+    }
+    binInput.placeholder = h0 && h0.auto ? `auto: ${formatCell(h0.width, set.decimal)}` : 'auto';
+    let note = '';
+    if (mode !== 'scatter' && set.fits.length) note = 'Fits are drawn with the points only.';
+    if (mode === 'histogram' && !h0) note = columnValues(set, set.histColumn === 'y' ? 'y' : 'x').length ? 'Too many bins: make the bin width larger.' : 'No values in this column yet.';
+    if (mode === 'box' && !columnValues(set, set.histColumn === 'y' ? 'y' : 'x').length) note = 'No values in this column yet.';
+    setText(displayNote, note);
+    setHidden(displayNote, !note);
+  }
+
+  // Summary statistics of both columns, with the correlation r (Phase 7b).
+  function renderStats(state, set) {
+    const method = state.settings.quartiles;
+    quartileSeg.set(method);
+    setText(quartileNote, method === 'ti'
+      ? 'Medians of the lower and upper halves, leaving out the median when n is odd (as a TI-84 does).'
+      : 'Interpolated between values, as Excel’s QUARTILE.INC and R do.');
+    const st = statsOf(set, method);
+    setHidden(statsTable, !st.cols.length);
+    setText(statsEmpty, st.cols.length ? (st.off ? `Points left out of fits are left out here too (${st.off}).` : '') : 'No values yet.');
+    setHidden(statsEmpty, !(st.off || !st.cols.length));
+    statsHeadRow.replaceChildren(h('th', {}, ''), ...st.cols.map((c) => h('th', {}, c.name)));
+    const fmtV = (v) => (Number.isFinite(v) ? formatCell(Number(v.toPrecision(10)), set.decimal) : '–');
+    statsBody.replaceChildren(
+      ...STAT_ROWS.map(([key, label]) => h('tr', {}, h('th', {}, label), ...st.cols.map((c) => h('td', {}, key === 'n' ? String(c.d.n) : fmtV(c.d[key]))))),
+      ...(st.cols.length === 2 ? [h('tr', { class: 'stats-r' }, h('th', {}, 'r'), h('td', { colspan: '2' }, `${fmtV(st.r)}${Number.isFinite(st.r) ? ` (${st.pairs} pairs)` : ''}`))] : []),
+    );
   }
 
   function renderTable(set) {

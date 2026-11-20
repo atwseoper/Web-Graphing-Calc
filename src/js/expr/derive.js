@@ -336,6 +336,8 @@ function deriveCall(node, d, numeric, deg) {
   const invTrig = (outer) => chain(deg ? mul(RAD(), outer) : outer);
   const one = num(1);
   const two = num(2);
+  // Are the arguments from index k on constant (in the variable being differentiated)?
+  const constFrom = (k) => node.args.slice(k).every((a) => isNum(d(a), 0));
   switch (node.name) {
     case 'sin': return trig(call('cos', u));
     case 'cos': return trig(neg(call('sin', u)));
@@ -366,6 +368,45 @@ function deriveCall(node, d, numeric, deg) {
     case 'sign':
       return num(0);
     case 'mod': return sub(d(u), mul(d(w), call('floor', div(u, w))));
+    // Probability distributions (Phase 7b), with constant parameters; otherwise the
+    // derivative is numeric. φ′ = −(u − μ)/σ² · φ; a cdf's derivative is its pdf; an
+    // inverse cdf's is 1 / pdf at the quantile.
+    case 'normalpdf': {
+      if (!constFrom(1)) return numeric();
+      const mu = node.args[1] || num(0);
+      const s = node.args[2] || one;
+      return mul(neg(div(sub(u, mu), pow(s, two))), mul(node, d(u)));
+    }
+    case 'normalcdf': {
+      if (n === 1) return mul(call('normalpdf', u), d(u));
+      if (!constFrom(2)) return numeric();
+      const params = node.args.slice(2);
+      return sub(mul(call('normalpdf', w, ...params), d(w)), mul(call('normalpdf', u, ...params), d(u)));
+    }
+    case 'invnorm':
+      if (!constFrom(1)) return numeric();
+      return div(d(u), call('normalpdf', node, ...node.args.slice(1)));
+    case 'tpdf':
+      if (!constFrom(1)) return numeric();
+      return mul(neg(div(mul(add(w, one), u), add(w, pow(u, two)))), mul(node, d(u)));
+    case 'tcdf': {
+      if (n === 2) return constFrom(1) ? mul(call('tpdf', u, w), d(u)) : numeric();
+      if (!constFrom(2)) return numeric();
+      const nu = node.args[2];
+      return sub(mul(call('tpdf', w, nu), d(w)), mul(call('tpdf', u, nu), d(u)));
+    }
+    case 'invt':
+      if (!constFrom(1)) return numeric();
+      return div(d(u), call('tpdf', node, w));
+    case 'chi2pdf':
+      if (!constFrom(1)) return numeric();
+      return mul(sub(div(sub(div(w, two), one), u), div(one, two)), mul(node, d(u)));
+    case 'chi2cdf': {
+      if (n === 2) return constFrom(1) ? mul(call('chi2pdf', u, w), d(u)) : numeric();
+      if (!constFrom(2)) return numeric();
+      const k = node.args[2];
+      return sub(mul(call('chi2pdf', w, k), d(w)), mul(call('chi2pdf', u, k), d(u)));
+    }
     case 'min':
     case 'max':
       if (n === 1) return d(u);

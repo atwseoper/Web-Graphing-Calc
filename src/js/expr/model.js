@@ -31,6 +31,7 @@ import { compile, referencedNames } from './compile.js';
 import { derive } from './derive.js';
 import { toText } from './print.js';
 import { isConstantName, isFunctionName } from './builtins.js';
+import { DISCRETE_FUNCTIONS } from '../numerics/distributions.js';
 
 export const PLOT_VARS = new Set(['x', 'y', 'r', 'θ', 't']);
 
@@ -350,6 +351,7 @@ export function analyse(rows, settings = {}) {
           r.f = unary(fn.call);
           r.body = { type: 'apply', name: def.name, args: [{ type: 'sym', name: 'x' }] };
           r.derivative = lazyDerivative(r.body);
+          r.discrete = discreteIn(def.body, 'x');
         }
         results[i] = r;
       }
@@ -435,6 +437,26 @@ export function analyse(rows, settings = {}) {
   function mentions(node, v) {
     return referencedNames(node).names.has(v);
   }
+
+  // Does y = f(x) involve a discrete distribution of x (binompdf(10, 0.3, x)…), directly
+  // or through user functions? Such graphs are drawn as stems at whole numbers (Phase 7b).
+  function discreteIn(node, v, seen = new Set()) {
+    if (!node || typeof node !== 'object') return false;
+    if (Array.isArray(node)) return node.some((n) => discreteIn(n, v, seen));
+    if (node.type === 'call' && DISCRETE_FUNCTIONS.has(node.name)) {
+      // Only the counting arguments: x in binompdf(n, p, x), a and b in binomcdf(n, p, a, b).
+      const from = node.name.startsWith('binom') ? 2 : 1;
+      if (node.args.slice(from).some((a) => mentions(a, v))) return true;
+    }
+    if (node.type === 'apply' && !seen.has(node.name)) {
+      const def = defs.get(node.name);
+      if (def && def.kind === 'function' && node.args.some((a) => mentions(a, v))) {
+        seen.add(node.name);
+        if (def.params.some((prm) => discreteIn(def.body, prm.name, seen))) return true;
+      }
+    }
+    return Object.entries(node).some(([k, c]) => k !== 'type' && c && typeof c === 'object' && discreteIn(c, v, seen));
+  }
   function mentionsXY(node) {
     return mentions(node, 'x') || mentions(node, 'y');
   }
@@ -507,7 +529,7 @@ export function analyse(rows, settings = {}) {
         }
         if (lhs.name === 'y') {
           const { fn } = compileWith(rhs, 'x', bothSides('y'));
-          return { kind: 'cartesian', f: unary(fn), body: rhs, derivative: lazyDerivative(rhs) };
+          return { kind: 'cartesian', f: unary(fn), body: rhs, derivative: lazyDerivative(rhs), discrete: discreteIn(rhs, 'x') };
         }
         if (lhs.name === 'x') {
           const { fn } = compileWith(rhs, 'y', bothSides('x'));
@@ -555,7 +577,7 @@ export function analyse(rows, settings = {}) {
     const { fn, uses } = compileWith(expr, 'x', (n, where) => {
       if (n === 'y') throw new ExprError('To graph a function, write y = …', where.start, where.end);
     });
-    if (uses) return { kind: 'cartesian', f: unary(fn), body: expr, derivative: lazyDerivative(expr) };
+    if (uses) return { kind: 'cartesian', f: unary(fn), body: expr, derivative: lazyDerivative(expr), discrete: discreteIn(expr, 'x') };
     return { kind: 'value', value: fn([0]) };
   }
 

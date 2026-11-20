@@ -63,7 +63,9 @@ test('opening a project keeps the user’s own keypad setting and Calc history',
   const { state, error } = openProject(current, projectJson(sample()));
   assert.equal(error, undefined);
   assert.equal(state.rows[0].text, 'y = a sin(x)');
-  assert.deepEqual(state.settings, { angle: 'deg', grid: 'polar', keypad: 'never', xAxis: 'linear', yAxis: 'linear' });
+  assert.deepEqual(state.settings, {
+    angle: 'deg', grid: 'polar', keypad: 'never', xAxis: 'linear', yAxis: 'linear', quartiles: 'ti',
+  });
   assert.equal(state.calc.history[0].input, '9');
   assert.equal(state.nextId, 50);
   assert.equal(state.data.sets[0].points[3].off, true);

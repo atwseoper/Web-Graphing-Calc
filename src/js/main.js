@@ -42,8 +42,9 @@ let analysis = analyse(store.get().rows, store.get().settings);
 const getAnalysis = () => analysis;
 const fitCache = createFitCache();
 // Fits drawn on the graph: those of visible data sets, with a result.
+// Fits are drawn over a data set's points, not over its histogram or box plot (Phase 7b).
 const getFits = () => fitCache.all(store.get(), analysis)
-  .filter(({ set, fit, result }) => !set.hidden && !fit.hidden && result && result.f);
+  .filter(({ set, fit, result }) => !set.hidden && !fit.hidden && result && result.f && (set.display || 'scatter') === 'scatter');
 
 const persist = debounce(() => storage && save(storage, store.get()), 400);
 window.addEventListener('pagehide', () => persist.flush());

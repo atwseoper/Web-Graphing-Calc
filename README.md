@@ -13,6 +13,7 @@ Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphin
 - Expressions shown as written maths (fractions, powers, roots, Σ) under each row
 - Variables, functions and sliders (with a play button and step); piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π
 - Graph analysis: tap a curve to see its roots, extrema, intercepts and intersections; derivative, tangent, integrals with error estimates, polar area
+- Statistics: summary statistics of each column (mean, median, both standard deviations, quartiles by the TI-84 method or interpolated, IQR, correlation r), histograms and box plots; normal, t, χ², binomial and Poisson distribution functions (pdf, cdf, inverse), with probabilities shaded on the graph and discrete distributions drawn as stems
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems and non-linear systems
 - Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
 - Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
