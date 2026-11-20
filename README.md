@@ -8,7 +8,7 @@ Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphin
 
 ## Features
 
-- Multiple y = f(x), x = g(y), parametric and polar graphs with pan, pinch-zoom and trace; animated θ/t sweep
+- Multiple y = f(x), x = g(y), parametric and polar graphs with pan, pinch-zoom and trace; animated θ/t sweep; linear or log axes (semi-log and log-log)
 - Implicit curves (x² + y² = 9), shaded inequalities (y < x², 0 < y < x), slope fields with solution curves (y′ = x − y)
 - Expressions shown as written maths (fractions, powers, roots, Σ) under each row
 - Variables, functions and sliders (with a play button and step); piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π

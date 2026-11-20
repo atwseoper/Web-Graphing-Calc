@@ -4,7 +4,7 @@ import { ICONS } from './icons.js';
 import { newRow, nextColor, MAX_ODE_POINTS } from '../state/defaults.js';
 import { formatNumber } from '../expr/format.js';
 import { defaultDomain } from '../expr/model.js';
-import { niceStep } from '../plot/viewport.js';
+import { niceStep, pxPerUnitX, pxPerUnitY } from '../plot/viewport.js';
 import { sliderRange, snapToStep, valueText } from '../expr/slider.js';
 import {
   riemannOf, taylorOf, secantOf, DEFAULT_RIEMANN_N, DEFAULT_TAYLOR_DEGREE, DEFAULT_SECANT_H,
@@ -504,7 +504,7 @@ export function createExprList({
   // A tapped coordinate, rounded to about a pixel.
   function roundForScreen(v, axis) {
     const vp = graph && graph.viewport ? graph.viewport() : null;
-    const scale = vp ? (axis === 'x' ? vp.scaleX : vp.scaleY) : 40;
+    const scale = vp ? (axis === 'x' ? pxPerUnitX(vp, v) : pxPerUnitY(vp, v)) : 40;
     const step = niceStep(2 / scale);
     const decimals = Math.max(0, Math.ceil(-Math.log10(step) - 1e-9));
     return Number((Math.round(v / step) * step).toFixed(Math.min(decimals, 12)));

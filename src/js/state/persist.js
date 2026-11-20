@@ -8,6 +8,7 @@ import { newDataSet, MAX_SETS } from '../data/table.js';
 import { MAX_POINTS } from '../data/csv.js';
 
 export const STORAGE_KEY = 'graphcalc:v1';
+export const AXIS_TYPES = ['linear', 'log'];
 const MAX_HISTORY = 100;
 
 const str = (v, fallback = '') => (typeof v === 'string' ? v : fallback);
@@ -95,7 +96,11 @@ export function deserialize(json) {
   let view = null;
   if (raw.view && typeof raw.view === 'object') {
     const v = { cx: num(raw.view.cx), cy: num(raw.view.cy), scaleX: num(raw.view.scaleX), scaleY: num(raw.view.scaleY) };
-    if (v.cx !== null && v.cy !== null && v.scaleX > 0 && v.scaleY > 0) view = v;
+    // The view is in axis coordinates (log10 on a log axis, Phase 7a), so it records
+    // which axes were log; the graph converts it if the settings say otherwise.
+    if (v.cx !== null && v.cy !== null && v.scaleX > 0 && v.scaleY > 0) {
+      view = { ...v, logX: bool(raw.view.logX), logY: bool(raw.view.logY) };
+    }
   }
 
   const s = raw.settings || {};
@@ -116,6 +121,8 @@ export function deserialize(json) {
       grid: oneOf(s.grid, ['cartesian', 'polar'], 'cartesian'),
       keypad: oneOf(s.keypad, ['auto', 'always', 'never'], 'auto'),
       pretty: oneOf(s.pretty, ['on', 'off'], 'on'),
+      xAxis: oneOf(s.xAxis, AXIS_TYPES, 'linear'),
+      yAxis: oneOf(s.yAxis, AXIS_TYPES, 'linear'),
     },
     calc: { history },
     solve: deserializeSolve(raw.solve),

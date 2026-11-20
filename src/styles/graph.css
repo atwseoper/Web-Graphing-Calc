@@ -53,6 +53,11 @@
 }
 
 .setting { margin-bottom: 12px; }
+.setting-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
 .setting-label {
   display: block;
   margin-bottom: 6px;
@@ -77,6 +82,10 @@
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
+}
+.segmented button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .segmented button[aria-checked="true"] {
   background: var(--surface);

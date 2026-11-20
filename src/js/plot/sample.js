@@ -8,7 +8,7 @@
 // line is drawn.
 //
 // Output: an array of polylines { x: number[], y: number[], t: number[] }.
-import { toScreen, worldBounds } from './viewport.js';
+import { toScreen, axisX, fromAxisX, fromAxisY, axisRange } from './viewport.js';
 
 const DEFAULTS = {
   initial: 200,   // evenly spaced intervals before refinement
@@ -108,32 +108,47 @@ function between(pa, pm, pb) {
 // ---- Curve types ---------------------------------------------------------------
 
 
-// y = f(x) across the visible x range.
-export function sampleCartesian(f, vp, options) {
-  const { xMin, xMax } = worldBounds(vp);
-  const pad = 2 / vp.scaleX;
-  return sampleCurve(
-    (x) => {
+// y = f(x) for lo ≤ x ≤ hi, sampled evenly in axis coordinates (in log x on a log
+// axis, so every decade gets the same care). The t of each point is its x.
+export function sampleXRange(f, lo, hi, vp, options) {
+  const u0 = axisX(vp, lo);
+  const u1 = axisX(vp, hi);
+  if (!Number.isFinite(u0) || !Number.isFinite(u1)) return [];
+  const lines = sampleCurve(
+    (u) => {
+      const x = fromAxisX(vp, u);
       const y = f(x);
       return Number.isFinite(y) ? toScreen(vp, x, y) : null;
     },
-    xMin - pad, xMax + pad,
+    u0, u1,
     { initial: Math.max(50, vp.width / 2), maxDepth: 6, ...options },
   );
+  if (vp.logX) for (const l of lines) l.t = l.t.map((u) => fromAxisX(vp, u));
+  return lines;
+}
+
+// y = f(x) across the visible x range.
+export function sampleCartesian(f, vp, options) {
+  const [u0, u1] = axisRange(vp, 'x');
+  const pad = 2 / vp.scaleX;
+  return sampleXRange(f, fromAxisX(vp, u0 - pad), fromAxisX(vp, u1 + pad), vp, options);
 }
 
 // x = g(y) across the visible y range.
 export function sampleCartesianX(g, vp, options) {
-  const { yMin, yMax } = worldBounds(vp);
+  const [v0, v1] = axisRange(vp, 'y');
   const pad = 2 / vp.scaleY;
-  return sampleCurve(
-    (y) => {
+  const lines = sampleCurve(
+    (v) => {
+      const y = fromAxisY(vp, v);
       const x = g(y);
       return Number.isFinite(x) ? toScreen(vp, x, y) : null;
     },
-    yMax + pad, yMin - pad, // top to bottom in screen space
+    v1 + pad, v0 - pad, // top to bottom in screen space
     { initial: Math.max(50, vp.height / 2), maxDepth: 6, ...options },
   );
+  if (vp.logY) for (const l of lines) l.t = l.t.map((v) => fromAxisY(vp, v));
+  return lines;
 }
 
 // (fx(t), fy(t)) for t in [t0, t1].

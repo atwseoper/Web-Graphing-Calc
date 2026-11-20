@@ -1,13 +1,29 @@
-// Settings popover: angle unit, grid type, keypad mode, about, clear all.
+// Settings popover: angle unit, grid type, axis types, keypad mode, about, clear all.
 import { h } from './dom.js';
 import { defaultState } from '../state/defaults.js';
 
 const GROUPS = [
   { key: 'angle', label: 'Angles', options: [['rad', 'Radians'], ['deg', 'Degrees']] },
   { key: 'grid', label: 'Grid', options: [['cartesian', 'Cartesian'], ['polar', 'Polar']] },
+  { key: 'xAxis', label: 'x axis', options: [['linear', 'Linear'], ['log', 'Log']] },
+  { key: 'yAxis', label: 'y axis', options: [['linear', 'Linear'], ['log', 'Log']] },
   { key: 'keypad', label: 'On-screen keypad', options: [['auto', 'Auto'], ['always', 'Always'], ['never', 'Never']] },
   { key: 'pretty', label: 'Maths preview under rows', options: [['on', 'Show'], ['off', 'Hide']] },
 ];
+
+// The x and y axis settings share a row, side by side.
+function pairUp(els) {
+  const out = [];
+  for (let i = 0; i < els.length; i++) {
+    if (els[i].dataset.key === 'xAxis' && els[i + 1] && els[i + 1].dataset.key === 'yAxis') {
+      out.push(h('div', { class: 'setting-pair' }, els[i], els[i + 1]));
+      i++;
+    } else {
+      out.push(els[i]);
+    }
+  }
+  return out;
+}
 
 export function createSettings({ popover, toggleBtn, store, buildInfo }) {
   const buttons = {};
@@ -34,18 +50,23 @@ export function createSettings({ popover, toggleBtn, store, buildInfo }) {
 
   popover.append(
     h('h2', { class: 'popover-title' }, 'Settings'),
-    ...GROUPS.map((g) => h('div', { class: 'setting' },
+    ...pairUp(GROUPS.map((g) => h('div', { class: 'setting', 'data-key': g.key },
       h('span', { class: 'setting-label', id: `setting-${g.key}` }, g.label),
       h('div', { class: 'segmented', role: 'radiogroup', 'aria-labelledby': `setting-${g.key}` },
         ...g.options.map(([value, text]) => {
           const b = h('button', {
             type: 'button', role: 'radio', 'aria-checked': 'false',
-            onClick: () => store.update((s) => ({ ...s, settings: { ...s.settings, [g.key]: value } })),
+            onClick: () => store.update((s) => {
+              const settings = { ...s.settings, [g.key]: value };
+              // The polar grid isn't offered with log axes (Phase 7a).
+              if (value === 'log') settings.grid = 'cartesian';
+              return { ...s, settings };
+            }),
           }, text);
           buttons[`${g.key}:${value}`] = b;
           return b;
         })),
-    )),
+    ))),
     clearBtn,
     h('p', { class: 'about' },
       'Graphing Calculator ', buildInfo, h('br'),
@@ -81,6 +102,10 @@ export function createSettings({ popover, toggleBtn, store, buildInfo }) {
         buttons[`${g.key}:${value}`].setAttribute('aria-checked', String(state.settings[g.key] === value));
       }
     }
+    const logAxes = state.settings.xAxis === 'log' || state.settings.yAxis === 'log';
+    const polar = buttons['grid:polar'];
+    polar.disabled = logAxes;
+    polar.title = logAxes ? 'Not available with log axes' : '';
   }
 
   return { render, close };

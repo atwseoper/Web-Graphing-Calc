@@ -31,8 +31,9 @@ test('serialize/deserialize round trip', () => {
   s.rows[0].hidden = true;
   s.rows[1].text = 'r = θ';
   s.rows[1].domainMax = '4π';
-  s.view = { cx: 1, cy: 2, scaleX: 30, scaleY: 60 };
+  s.view = { cx: 1, cy: 2, scaleX: 30, scaleY: 60, logX: true, logY: false };
   s.settings.angle = 'deg';
+  s.settings.xAxis = 'log';
   s.calc.history.push({ input: '1+1', output: '2', value: 2, error: false });
   const back = deserialize(serialize(s));
   assert.deepEqual(back, s);
@@ -46,7 +47,7 @@ test('deserialize rejects bad data field by field', () => {
     nextId: 2,
     rows: [{ id: 5, text: 'y=x', color: 'red' }, { id: 5, text: 'dup' }, { text: 'no id' }, null],
     view: { cx: 'a', cy: 0, scaleX: 1, scaleY: 1 },
-    settings: { angle: 'grad', grid: 'polar' },
+    settings: { angle: 'grad', grid: 'polar', xAxis: 'ln', yAxis: 'log' },
     calc: { history: [{ input: '2', output: '2' }, { nope: true }] },
   }));
   assert.equal(s.rows.length, 1);
@@ -55,6 +56,8 @@ test('deserialize rejects bad data field by field', () => {
   assert.equal(s.view, null);
   assert.equal(s.settings.angle, 'rad');
   assert.equal(s.settings.grid, 'polar');
+  assert.equal(s.settings.xAxis, 'linear');
+  assert.equal(s.settings.yAxis, 'log');
   assert.equal(s.calc.history.length, 1);
 });
 

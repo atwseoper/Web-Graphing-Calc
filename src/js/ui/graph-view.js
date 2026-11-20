@@ -3,14 +3,17 @@
 // points of interest (roots, extrema, intercepts, intersections) of selected curves,
 // and the data sets from the Data tab (points and error bars). Points tied to sliders
 // get handles that can be dragged (Phase 6a, through the pointDrag controller).
+// Either axis can be logarithmic (Phase 7a): the viewport maps through log10 there, and
+// everything drawn goes through toScreen, so values ≤ 0 on a log axis aren't drawn.
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, homeViewport, resizeViewport,
+  screenX, screenY, axisX, axisY, fromAxisX, axisRange, pxPerUnitX, pxPerUnitY, slopeInAxes, setAxes, axisFit,
 } from '../plot/viewport.js';
 import {
   drawCartesianGrid, drawCartesianLabels, drawPolarGrid, drawPolarLabels,
 } from '../plot/grid.js';
 import {
-  sampleCurve, sampleCartesian, sampleCartesianX, sampleParametric, samplePolar, nearestOnLines,
+  sampleCartesian, sampleCartesianX, sampleXRange, sampleParametric, samplePolar, nearestOnLines,
 } from '../plot/sample.js';
 import {
   drawLines, drawPoint, drawHandle, drawMarker, drawPoi, fillToBaseline, fillFan, drawScatter, drawErrorBars, fillBand,
@@ -25,6 +28,7 @@ import { riemannOf, taylorOf, secantOf } from '../expr/calculus.js';
 const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope']);
 const REGION_ALPHA = 0.16;
 const SLOPE_SPACING = 30; // px between slope-field marks
+const FILL_EDGE = 10; // px beyond the canvas edge that fills reach
 const STRICT_DASH = [8, 6]; // edges of < and > regions are dashed, like on paper
 const TAP_SLOP = 8; // px of movement still counted as a tap
 const DOUBLE_TAP_MS = 320;
@@ -78,7 +82,7 @@ export function createGraphView({
   function persistView() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      const view = { cx: vp.cx, cy: vp.cy, scaleX: vp.scaleX, scaleY: vp.scaleY };
+      const view = { cx: vp.cx, cy: vp.cy, scaleX: vp.scaleX, scaleY: vp.scaleY, logX: vp.logX, logY: vp.logY };
       store.update((s) => ({ ...s, view }));
     }, 300);
   }
@@ -87,6 +91,35 @@ export function createGraphView({
     persistView();
     requestDraw();
     for (const l of listeners) l();
+  }
+
+  // ---- axis types (Phase 7a) ---------------------------------------------------------
+  function wantedAxes() {
+    const { settings } = store.get();
+    return { logX: settings.xAxis === 'log', logY: settings.yAxis === 'log' };
+  }
+  // Bring the view into line with the axis settings (changed in Settings, by undo, or by
+  // opening a project), keeping as much of the visible range as can be shown.
+  function syncAxes() {
+    if (!vp) return;
+    const { logX, logY } = wantedAxes();
+    if (vp.logX === logX && vp.logY === logY) return;
+    vp = setAxes(vp, logX, logY);
+    trace = null;
+    poiSel = null;
+    persistView();
+    for (const l of listeners) l();
+  }
+
+  // On a log y axis, values ≤ 0 lie below the graph: fills (integrals, bands, error
+  // bars, Riemann rectangles) run to just past the bottom edge.
+  function fillY(y) {
+    const sy = screenY(vp, y);
+    if (Number.isFinite(sy)) return sy;
+    return vp.logY && y <= 0 ? vp.height + FILL_EDGE : NaN;
+  }
+  function baselineY() {
+    return vp.logY ? vp.height + FILL_EDGE : screenY(vp, 0);
   }
 
   // ---- sizing --------------------------------------------------------------------
@@ -100,7 +133,8 @@ export function createGraphView({
     canvas.height = Math.round(hgt * dpr);
     if (!vp) {
       const saved = store.get().view;
-      vp = saved ? createViewport({ width: w, height: hgt, ...saved }) : homeViewport(w, hgt);
+      vp = saved ? createViewport({ width: w, height: hgt, ...saved }) : homeViewport(w, hgt, wantedAxes());
+      syncAxes();
       for (const l of listeners) l();
       if (pendingFrame) {
         const [x0, x1] = pendingFrame;
@@ -157,6 +191,7 @@ export function createGraphView({
   function draw() {
     if (!vp) return;
     if (!colors) readColors();
+    syncAxes();
     const state = store.get();
     const analysis = getAnalysis();
     const dpr = renderScale || window.devicePixelRatio || 1;
@@ -164,7 +199,7 @@ export function createGraphView({
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, vp.width, vp.height);
 
-    const polarGrid = state.settings.grid === 'polar';
+    const polarGrid = state.settings.grid === 'polar' && !vp.logX && !vp.logY;
     if (polarGrid) drawPolarGrid(ctx, vp, colors);
     else drawCartesianGrid(ctx, vp, colors);
 
@@ -195,7 +230,7 @@ export function createGraphView({
         if (!lines.length) continue;
         const [sx, sy] = [lines[0].x[0], lines[0].y[0]];
         // Handles are drawn last, on top; not in exported images.
-        if (pointDrag && renderScale === 0 && pointDrag.isDraggable(row.id, [vp.scaleX, vp.scaleY])) {
+        if (pointDrag && renderScale === 0 && pointDrag.isDraggable(row.id, vp)) {
           handles.push({ rowId: row.id, sx, sy, color: row.color });
         } else {
           drawPoint(ctx, sx, sy, row.color);
@@ -262,8 +297,12 @@ export function createGraphView({
     const color = row.color;
     const dash = r.strict ? STRICT_DASH : null;
     if (r.form === 'y' || r.form === 'x') {
-      // Exact: fill between the boundary curve and the edge of the graph.
-      const lines = r.form === 'y' ? sampleCartesian(r.f, vp) : sampleCartesianX(r.f, vp);
+      // Exact: fill between the boundary curve and the edge of the graph. On a log axis
+      // a boundary at or below 0 lies beyond the low edge, so it is drawn there (as the
+      // smallest positive number), which keeps the region above it shaded.
+      const logged = r.form === 'y' ? vp.logY : vp.logX;
+      const f = logged ? (v) => { const w = r.f(v); return w <= 0 ? Number.MIN_VALUE : w; } : r.f;
+      const lines = r.form === 'y' ? sampleCartesian(f, vp) : sampleCartesianX(f, vp);
       ctx.save();
       ctx.fillStyle = color;
       ctx.globalAlpha = REGION_ALPHA;
@@ -309,10 +348,13 @@ export function createGraphView({
   }
 
   function drawSlopeField(row, r) {
-    const { xMin, xMax, yMin, yMax } = worldBounds(vp);
-    // Marks sit on a grid fixed to the plane, so they don't swim when panning.
-    const stepX = SLOPE_SPACING / vp.scaleX;
-    const stepY = SLOPE_SPACING / vp.scaleY;
+    // Marks sit on a grid fixed to the plane in axis coordinates (evenly spaced on
+    // screen, also on log axes), so they don't swim when panning. Each points along the
+    // slope as it appears on the graph: the screen direction of (1, f) at that point.
+    const [u0, u1] = axisRange(vp, 'x');
+    const [v0, v1] = axisRange(vp, 'y');
+    const stepU = SLOPE_SPACING / vp.scaleX;
+    const stepV = SLOPE_SPACING / vp.scaleY;
     const half = SLOPE_SPACING * 0.3;
     ctx.save();
     ctx.strokeStyle = row.color;
@@ -320,14 +362,17 @@ export function createGraphView({
     ctx.lineWidth = 1.6;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    for (let gx = Math.ceil(xMin / stepX) * stepX; gx <= xMax; gx += stepX) {
-      for (let gy = Math.ceil(yMin / stepY) * stepY; gy <= yMax; gy += stepY) {
+    for (let gu = Math.ceil(u0 / stepU) * stepU; gu <= u1; gu += stepU) {
+      const gx = fromAxisX(vp, gu);
+      for (let gv = Math.ceil(v0 / stepV) * stepV; gv <= v1; gv += stepV) {
+        const gy = vp.logY ? 10 ** gv : gv;
         const m = r.f(gx, gy);
         if (!Number.isFinite(m)) continue;
         const [sx, sy] = toScreen(vp, gx, gy);
-        const vx = vp.scaleX;
-        const vy = -m * vp.scaleY;
+        const vx = pxPerUnitX(vp, gx);
+        const vy = -m * pxPerUnitY(vp, gy);
         const len = Math.hypot(vx, vy);
+        if (!(len > 0) || !Number.isFinite(len)) continue;
         const ux = (vx / len) * half;
         const uy = (vy / len) * half;
         ctx.moveTo(sx - ux, sy - uy);
@@ -337,18 +382,23 @@ export function createGraphView({
     ctx.stroke();
     ctx.restore();
 
-    // Solution curves through the row's starting points.
-    const h = yMax - yMin;
+    // Solution curves through the row's starting points, integrated in axis
+    // coordinates (dv/du; the same as dy/dx on linear axes), so the steps are even on
+    // screen whichever axes are log.
+    const g = slopeInAxes(vp, r.f);
+    const h = v1 - v0;
     for (const [x0, y0] of row.odePoints || []) {
-      const p = solutionThrough(r.f, x0, y0, xMin, xMax, {
-        steps: interacting ? 300 : 900, yMin: yMin - h, yMax: yMax + h, maxJump: 40 / vp.scaleY,
+      const a0 = axisX(vp, x0);
+      const b0 = axisY(vp, y0);
+      if (!Number.isFinite(a0) || !Number.isFinite(b0)) continue;
+      const p = solutionThrough(g, a0, b0, u0, u1, {
+        steps: interacting ? 300 : 900, yMin: v0 - h, yMax: v1 + h, maxJump: 40 / vp.scaleY,
       });
       const xs = [];
       const ys = [];
       for (let i = 0; i < p.x.length; i++) {
-        const [sx, sy] = toScreen(vp, p.x[i], p.y[i]);
-        xs.push(sx);
-        ys.push(sy);
+        xs.push(vp.width / 2 + (p.x[i] - vp.cx) * vp.scaleX);
+        ys.push(vp.height / 2 - (p.y[i] - vp.cy) * vp.scaleY);
       }
       drawLines(ctx, [{ x: xs, y: ys }], row.color, 2.5);
       const [sx, sy] = toScreen(vp, x0, y0);
@@ -407,7 +457,7 @@ export function createGraphView({
     }
     if (!Number.isFinite(wx) || !Number.isFinite(wy)) return;
     const [sx, sy] = toScreen(vp, wx, wy);
-    if (r.kind === 'polar') {
+    if (r.kind === 'polar' && !vp.logX && !vp.logY) {
       const [ox, oy] = toScreen(vp, 0, 0);
       drawLines(ctx, [{ x: [ox, sx], y: [oy, sy] }], row.color, 1.5, { dash: [5, 4], alpha: 0.8 });
     }
@@ -441,6 +491,7 @@ export function createGraphView({
       set.points.forEach((p, i) => {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
         const [sx, sy] = toScreen(vp, p.x, p.y);
+        if (!Number.isFinite(sx) || !Number.isFinite(sy)) return; // ≤ 0 on a log axis
         const target = p.off ? off : on;
         target.x.push(sx);
         target.y.push(sy);
@@ -449,8 +500,8 @@ export function createGraphView({
         all.i.push(i);
         if (set.hasSigma && p.s > 0) {
           bars.x.push(sx);
-          bars.lo.push(toScreen(vp, p.x, p.y - p.s)[1]);
-          bars.hi.push(toScreen(vp, p.x, p.y + p.s)[1]);
+          bars.lo.push(fillY(p.y - p.s));
+          bars.hi.push(fillY(p.y + p.s));
         }
       });
       const n = all.x.length;
@@ -463,7 +514,6 @@ export function createGraphView({
   }
 
   function drawBands(fit, r) {
-    const { xMin, xMax } = worldBounds(vp);
     const N = Math.max(60, Math.round(vp.width / 3));
     const xs = new Array(N + 1);
     const cLo = new Array(N + 1);
@@ -472,18 +522,19 @@ export function createGraphView({
     const pHi = new Array(N + 1);
     const pred = fit.bands === 'both' && !r.weighted && Number.isFinite(r.s);
     for (let k = 0; k <= N; k++) {
-      const x = xMin + ((xMax - xMin) * k) / N;
+      // Evenly spaced across the screen (so in log x on a log axis).
+      xs[k] = (vp.width * k) / N;
+      const x = toWorld(vp, xs[k], 0)[0];
       const y = r.f(x);
       const v = r.meanVar(x);
-      xs[k] = toScreen(vp, x, 0)[0];
       const okv = Number.isFinite(y) && Number.isFinite(v) && v >= 0;
       const half = okv ? r.q * Math.sqrt(v) : NaN;
-      cLo[k] = okv ? toScreen(vp, x, y - half)[1] : NaN;
-      cHi[k] = okv ? toScreen(vp, x, y + half)[1] : NaN;
+      cLo[k] = okv ? fillY(y - half) : NaN;
+      cHi[k] = okv ? fillY(y + half) : NaN;
       if (pred) {
         const ph = okv ? r.q * Math.sqrt(v + r.s * r.s) : NaN;
-        pLo[k] = okv ? toScreen(vp, x, y - ph)[1] : NaN;
-        pHi[k] = okv ? toScreen(vp, x, y + ph)[1] : NaN;
+        pLo[k] = okv ? screenY(vp, y - ph) : NaN;
+        pHi[k] = okv ? screenY(vp, y + ph) : NaN;
       }
     }
     fillBand(ctx, xs, cLo, cHi, fit.color, 0.16);
@@ -517,17 +568,19 @@ export function createGraphView({
         return;
       }
       if (a === null || b === null || a === b) return;
-      const { xMin, xMax } = worldBounds(vp);
+      const [u0, u1] = axisRange(vp, 'x');
       const pad = 2 / vp.scaleX;
-      const lo = Math.max(Math.min(a, b), xMin - pad);
-      const hi = Math.min(Math.max(a, b), xMax + pad);
+      const lo = Math.max(Math.min(a, b), fromAxisX(vp, u0 - pad));
+      const hi = Math.min(Math.max(a, b), fromAxisX(vp, u1 + pad));
       if (!(hi > lo)) return;
-      const lines = sampleCurve((x) => {
-        const y = r.f(x);
-        return Number.isFinite(y) ? toScreen(vp, x, y) : null;
-      }, lo, hi, { initial: Math.max(20, ((hi - lo) * vp.scaleX) / 3), maxDepth: 5 });
-      fillToBaseline(ctx, lines, toScreen(vp, 0, 0)[1], row.color, 0.2);
+      // On a log y axis the curve is clamped to just below the graph where it is ≤ 0,
+      // so the shading runs down to the bottom edge, its baseline.
+      const fy = vp.logY ? (x) => { const y = r.f(x); return y <= 0 ? Number.MIN_VALUE : y; } : r.f;
+      const width = Math.abs(screenX(vp, hi) - screenX(vp, lo));
+      const lines = sampleXRange(fy, lo, hi, vp, { initial: Math.max(20, (Number.isFinite(width) ? width : vp.width) / 3), maxDepth: 5 });
+      fillToBaseline(ctx, lines, baselineY(), row.color, 0.2);
     } else if (r.kind === 'polar') {
+      if (vp.logX || vp.logY) return; // polar areas are swept from the origin
       const from = a ?? r.domain.min;
       const to = b ?? r.domain.max;
       if (!(to > from)) return;
@@ -543,15 +596,16 @@ export function createGraphView({
     const { edges, heights } = rs.res;
     const LIM = 20000;
     const cl = (v) => Math.max(-LIM, Math.min(LIM, v));
-    const base = cl(toScreen(vp, 0, 0)[1]);
-    const X = (x) => cl(toScreen(vp, x, 0)[0]);
-    const Y = (y) => cl(toScreen(vp, 0, y)[1]);
+    const base = cl(baselineY());
+    const X = (x) => cl(screenX(vp, x));
+    const Y = (y) => cl(fillY(y));
     ctx.save();
     ctx.beginPath();
     const dots = [];
     for (let k = 0; k < edges.length - 1; k++) {
       const x0 = X(edges[k]);
       const x1 = X(edges[k + 1]);
+      if (!Number.isFinite(x0) || !Number.isFinite(x1)) continue; // x ≤ 0 on a log axis
       if (Math.max(x0, x1) < -2 || Math.min(x0, x1) > vp.width + 2) continue;
       if (rs.method === 'trap') {
         ctx.moveTo(x0, base);
@@ -575,7 +629,7 @@ export function createGraphView({
     ctx.stroke();
     ctx.globalAlpha = 1;
     // Sample points, when the rectangles are wide enough to show them.
-    if (dots.length && Math.abs(X(edges[1]) - X(edges[0])) >= 6) {
+    if (dots.length && Math.abs(X(edges[edges.length - 1]) - X(edges[edges.length - 2])) >= 6) {
       ctx.beginPath();
       for (const [x, y] of dots) {
         ctx.moveTo(x + 2.5, y);
@@ -586,8 +640,13 @@ export function createGraphView({
     ctx.restore();
   }
 
-  // A straight line through (x0, y0) with gradient m, across the view.
+  // A straight line through (x0, y0) with gradient m, across the view. On log axes a
+  // straight line is a curve, so it is sampled like one.
   function fullLine(x0, y0, m, color, width, opts) {
+    if (vp.logX || vp.logY) {
+      drawLines(ctx, sampleCartesian((x) => y0 + m * (x - x0), vp), color, width, opts);
+      return;
+    }
     const { xMin, xMax } = worldBounds(vp);
     const p0 = toScreen(vp, xMin, y0 + m * (xMin - x0));
     const p1 = toScreen(vp, xMax, y0 + m * (xMax - x0));
@@ -628,12 +687,7 @@ export function createGraphView({
     const y0 = r.f(a);
     if (!Number.isFinite(y0)) return;
     const m = d ? d.f(a) : NaN;
-    if (Number.isFinite(m)) {
-      const { xMin, xMax } = worldBounds(vp);
-      const p0 = toScreen(vp, xMin, y0 + m * (xMin - a));
-      const p1 = toScreen(vp, xMax, y0 + m * (xMax - a));
-      drawLines(ctx, [{ x: [p0[0], p1[0]], y: [p0[1], p1[1]] }], row.color, 1.5, { alpha: 0.75 });
-    }
+    if (Number.isFinite(m)) fullLine(a, y0, m, row.color, 1.5, { alpha: 0.75 });
     const [sx, sy] = toScreen(vp, a, y0);
     drawPoi(ctx, sx, sy, row.color, colors, true);
   }
@@ -655,9 +709,21 @@ export function createGraphView({
     if (hit && hit.key === key) return hit.value;
     if (!allowCompute) return null;
     const d = r.derivative ? r.derivative() : null;
-    const value = pointsOfInterest({ f: r.f, df: d ? d.f : undefined }, xMin, xMax, {
-      others, samples: Math.round(Math.min(800, Math.max(200, vp.width))),
-    });
+    const samples = Math.round(Math.min(800, Math.max(200, vp.width)));
+    let value;
+    if (vp.logX) {
+      // Search evenly in log x: f(10^u) has the same roots, extrema and intersections,
+      // and its derivative is f′(x)·x·ln 10. There is no y-intercept on a log x axis.
+      const [u0, u1] = axisRange(vp, 'x');
+      const wrap = (fn) => (fn ? (u) => fn(10 ** u) : undefined);
+      const dwrap = (fn) => (fn ? (u) => { const x = 10 ** u; return fn(x) * x * Math.LN10; } : undefined);
+      const found = pointsOfInterest({ f: wrap(r.f), df: dwrap(d && d.f) }, u0, u1, {
+        others: others.map((o) => ({ ...o, f: wrap(o.f), df: dwrap(o.df) })), samples,
+      });
+      value = found.filter((p) => p.kind !== 'y-intercept').map((p) => ({ ...p, x: 10 ** p.x }));
+    } else {
+      value = pointsOfInterest({ f: r.f, df: d ? d.f : undefined }, xMin, xMax, { others, samples });
+    }
     poiCache.map.set(rowId, { key, value });
     return value;
   }
@@ -742,9 +808,10 @@ export function createGraphView({
   }
 
   function tracePosition(r, tr, angle) {
-    const px = 1 / vp.scaleX;
-    const py = 1 / vp.scaleY;
-    const fmt = (x, y) => `(${formatCoordinate(x, px)}, ${formatCoordinate(y, py)})`;
+    // The size of a pixel in world units, where the point is (it varies on a log axis).
+    const pxAt = (x) => 1 / pxPerUnitX(vp, x);
+    const pyAt = (y) => 1 / pxPerUnitY(vp, y);
+    const fmt = (x, y) => `(${formatCoordinate(x, pxAt(x))}, ${formatCoordinate(y, pyAt(y))})`;
     switch (r.kind) {
       case 'cartesian':
       case 'function': {
@@ -765,10 +832,9 @@ export function createGraphView({
         if (!Number.isFinite(rad)) return null;
         const a = angle === 'deg' ? (tr.t * Math.PI) / 180 : tr.t;
         const theta = angle === 'deg' ? `${formatNumber(tr.t, 4)}°` : formatCoordinate(tr.t, 0.001);
-        return {
-          x: rad * Math.cos(a), y: rad * Math.sin(a),
-          label: `r = ${formatCoordinate(rad, Math.min(px, py))}, θ = ${theta}`,
-        };
+        const x = rad * Math.cos(a);
+        const y = rad * Math.sin(a);
+        return { x, y, label: `r = ${formatCoordinate(rad, Math.min(pxAt(x), pyAt(y)))}, θ = ${theta}` };
       }
       case 'point':
         return { x: r.x, y: r.y, label: fmt(r.x, r.y) };
@@ -826,8 +892,10 @@ export function createGraphView({
         const hit = nearestOnLines(curve.lines, sx, sy);
         if (!hit) break;
         const [hx, hy] = toWorld(vp, hit.x, hit.y);
-        const snapped = snapToCurve(curve.result.F, hx, hy, 0.5 / Math.max(vp.scaleX, vp.scaleY));
-        const [tx, ty] = snapped && Math.hypot((snapped[0] - hx) * vp.scaleX, (snapped[1] - hy) * vp.scaleY) < 3 ? snapped : [hx, hy];
+        const kx = pxPerUnitX(vp, hx);
+        const ky = pxPerUnitY(vp, hy);
+        const snapped = snapToCurve(curve.result.F, hx, hy, 0.5 / Math.max(kx, ky));
+        const [tx, ty] = snapped && Math.hypot((snapped[0] - hx) * kx, (snapped[1] - hy) * ky) < 3 ? snapped : [hx, hy];
         trace = { rowId: curve.rowId, kind: 'implicit', x: tx, y: ty };
         break;
       }
@@ -935,7 +1003,7 @@ export function createGraphView({
       if (!gesture.moved) return;
       interacting = true;
       const target = toWorld(vp, p.x + gesture.offset.x, p.y + gesture.offset.y);
-      pointDrag.move(gesture.session, target, [vp.scaleX, vp.scaleY]);
+      pointDrag.move(gesture.session, target, vp);
       return;
     }
     if (gesture.type === 'pan' && gesture.moved) {
@@ -1017,25 +1085,41 @@ export function createGraphView({
 
   // ---- commands ----------------------------------------------------------------------
   function zoomBy(factor) {
+    syncAxes();
     setViewport(zoomAt(vp, vp.width / 2, vp.height / 2, factor));
   }
 
   function home() {
     trace = null;
-    setViewport(homeViewport(vp.width, vp.height));
+    setViewport(homeViewport(vp.width, vp.height, wantedAxes()));
+  }
+
+  // Set one axis to show world values lo…hi (axis coordinates handle log axes; a range
+  // reaching ≤ 0 on a log axis shows three decades below its top).
+  function withRange(next, axis, lo, hi, pad) {
+    const x = axis === 'x';
+    const f = axisFit(x ? next.logX : next.logY, lo, hi, x ? next.width : next.height, pad);
+    if (!f) return next;
+    return x
+      ? { ...next, cx: f.c, scaleX: f.scale ?? next.scaleX }
+      : { ...next, cy: f.c, scaleY: f.scale ?? next.scaleY };
   }
 
   // Zoom so the visible graphs fill the view. Cartesian graphs fit vertically over the
-  // current x range; parametric, polar and point rows fit in both directions.
+  // current x range; parametric, polar and point rows fit in both directions. Ranges are
+  // worked out in axis coordinates, so values ≤ 0 on a log axis are left out.
   function fit() {
+    syncAxes();
     const state = store.get();
     const analysis = getAnalysis();
-    const { xMin, xMax, yMin, yMax } = worldBounds(vp);
     const xs = [];
     const ys = [];
     let only1D = true; // only y = f(x) / x = g(y) curves: fit one direction
     let round = false; // parametric, polar or point rows: keep circles round
     const N = 400;
+    // Evenly across the screen, which is evenly in log x on a log axis.
+    const xAt = (k) => toWorld(vp, (vp.width * k) / N, 0)[0];
+    const yAt = (k) => toWorld(vp, 0, (vp.height * k) / N)[1];
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
       if (row.hidden || !isPlottable(r)) return;
@@ -1055,12 +1139,12 @@ export function createGraphView({
       }
       if (r.kind === 'cartesian' || r.kind === 'function') {
         for (let k = 0; k <= N; k++) {
-          const y = r.f(xMin + ((xMax - xMin) * k) / N);
+          const y = r.f(xAt(k));
           if (Number.isFinite(y)) ys.push(y);
         }
       } else if (r.kind === 'cartesian-x') {
         for (let k = 0; k <= N; k++) {
-          const x = r.f(yMin + ((yMax - yMin) * k) / N);
+          const x = r.f(yAt(k));
           if (Number.isFinite(x)) xs.push(x);
         }
       } else {
@@ -1089,13 +1173,16 @@ export function createGraphView({
         }
       }
     });
-    const data = dataBounds(state.data ? state.data.sets : []);
+    const data = dataBounds(state.data ? state.data.sets : [], { positiveX: vp.logX, positiveY: vp.logY });
     if (data) {
       only1D = false;
       xs.push(data.xMin, data.xMax);
       ys.push(data.yMin, data.yMax);
     }
-    if (!xs.length && !ys.length) return;
+    // In axis coordinates; values a log axis can't show drop out here.
+    const us = xs.map((x) => axisX(vp, x)).filter(Number.isFinite);
+    const vs = ys.map((y) => axisY(vp, y)).filter(Number.isFinite);
+    if (!us.length && !vs.length) return;
 
     const range = (arr) => {
       if (!arr.length) return null;
@@ -1105,9 +1192,9 @@ export function createGraphView({
       return [lo, hi];
     };
     const pad = 0.08;
-    let next = { ...vp };
-    const ry = range(ys);
-    const rx = range(xs);
+    const next = { ...vp };
+    const ry = range(vs);
+    const rx = range(us);
     if (ry) {
       const [lo, hi] = ry;
       const span = hi - lo;
@@ -1120,14 +1207,14 @@ export function createGraphView({
       next.cx = (lo + hi) / 2;
       if (span > 1e-12) next.scaleX = (vp.width * (1 - 2 * pad)) / span;
     }
-    if (round) {
+    if (round && !vp.logX && !vp.logY) {
       // Keep circles round when fitting parametric and polar curves.
       const s = Math.min(next.scaleX, next.scaleY);
       next.scaleX = s;
       next.scaleY = s;
     }
     trace = null;
-    setViewport(next);
+    setViewport(zoomAt(next, next.width / 2, next.height / 2, 1)); // zoomAt(…, 1) applies the scale limits
   }
 
   // Show x0 ≤ x ≤ x1 (keeping the y centre), then fit the graphs vertically.
@@ -1136,28 +1223,29 @@ export function createGraphView({
       pendingFrame = [x0, x1];
       return;
     }
+    syncAxes();
     const span = x1 - x0;
     if (!(span > 0) || !Number.isFinite(span)) return;
-    setViewport({ ...vp, cx: (x0 + x1) / 2, scaleX: vp.width / span });
+    setViewport(withRange(vp, 'x', x0, x1, 0));
     fit();
   }
 
   // Show a rectangle of the plane, with a margin (e.g. a newly imported data set).
   function frameBounds({ xMin, xMax, yMin, yMax }) {
     if (!vp) return;
+    syncAxes();
     let w = xMax - xMin;
     let hgt = yMax - yMin;
     if (!(w > 0)) w = Math.max(Math.abs(xMin), 1);
     if (!(hgt > 0)) hgt = Math.max(Math.abs(yMin), 1);
     const pad = 0.1;
     trace = null;
-    setViewport({
-      ...vp,
-      cx: (xMin + xMax) / 2,
-      cy: (yMin + yMax) / 2,
-      scaleX: vp.width / (w * (1 + 2 * pad)),
-      scaleY: vp.height / (hgt * (1 + 2 * pad)),
-    });
+    // A single value gets a margin either side: ±w on a linear axis, a factor of 3 on a log one.
+    const span = (log, lo, hi, d) => (hi > lo ? [lo, hi] : log ? [lo / 3, lo * 3] : [lo - d / 2, lo + d / 2]);
+    const [x0, x1] = span(vp.logX, xMin, xMax, w);
+    const [y0, y1] = span(vp.logY, yMin, yMax, hgt);
+    const pf = pad / (1 + 2 * pad); // the same margin as before, as a share of the canvas
+    setViewport(withRange(withRange(vp, 'x', x0, x1, pf), 'y', y0, y1, pf));
   }
 
   function select(rowId) {
@@ -1209,7 +1297,8 @@ export function createGraphView({
   // Show a saved view (an opened project); null = the home view.
   function useView(view) {
     if (!vp) return; // not sized yet: resize() reads the view from the store
-    vp = view ? createViewport({ width: vp.width, height: vp.height, ...view }) : homeViewport(vp.width, vp.height);
+    vp = view ? createViewport({ width: vp.width, height: vp.height, ...view }) : homeViewport(vp.width, vp.height, wantedAxes());
+    syncAxes();
     trace = null;
     poiSel = null;
     requestDraw();

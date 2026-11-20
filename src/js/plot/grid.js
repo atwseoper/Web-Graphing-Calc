@@ -1,10 +1,12 @@
 // Draws the Cartesian or polar grid, axes and labels onto a 2D canvas context.
 // Lines are drawn before the curves and labels after them, so a label (with its
 // background-coloured outline) always stays readable – including the 0 at the origin,
-// where many curves pass.
-import { toScreen, worldBounds, niceStep, minorStep, ticks, formatTick } from './viewport.js';
+// where many curves pass. Either Cartesian axis may be logarithmic (Phase 7a): it then
+// has no zero line, and the other axis's labels sit at the edge of the graph.
+import {
+  toScreen, screenX, screenY, worldBounds, niceStep, minorStep, ticks, formatTick, axisTicks, MIN_MAJOR_PX,
+} from './viewport.js';
 
-const MIN_MAJOR_PX = 80; // target minimum spacing between labelled grid lines
 const FONT = '12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export function gridSteps(vp) {
@@ -15,14 +17,16 @@ export function gridSteps(vp) {
 
 function strokeVertical(ctx, vp, xs) {
   for (const x of xs) {
-    const sx = Math.round(toScreen(vp, x, 0)[0]) + 0.5;
+    const sx = Math.round(screenX(vp, x)) + 0.5;
+    if (!Number.isFinite(sx)) continue;
     ctx.moveTo(sx, 0);
     ctx.lineTo(sx, vp.height);
   }
 }
 function strokeHorizontal(ctx, vp, ys) {
   for (const y of ys) {
-    const sy = Math.round(toScreen(vp, 0, y)[1]) + 0.5;
+    const sy = Math.round(screenY(vp, y)) + 0.5;
+    if (!Number.isFinite(sy)) continue;
     ctx.moveTo(0, sy);
     ctx.lineTo(vp.width, sy);
   }
@@ -36,20 +40,26 @@ function label(ctx, text, x, y, colors) {
   ctx.fillText(text, x, y);
 }
 
+// Screen position of the origin; on a log axis there is no zero, so x labels go to the
+// bottom edge (log y) and y labels to the left edge (log x).
+function origin(vp) {
+  const ox = vp.logX ? -Infinity : screenX(vp, 0);
+  const oy = vp.logY ? Infinity : screenY(vp, 0);
+  return [ox, oy];
+}
+
 function drawAxes(ctx, vp, colors) {
-  const [ox, oy] = toScreen(vp, 0, 0);
+  const [ox, oy] = origin(vp);
   ctx.strokeStyle = colors.axis;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   if (ox >= 0 && ox <= vp.width) { ctx.moveTo(ox, 0); ctx.lineTo(ox, vp.height); }
   if (oy >= 0 && oy <= vp.height) { ctx.moveTo(0, oy); ctx.lineTo(vp.width, oy); }
   ctx.stroke();
-  return [ox, oy];
 }
 
-function drawAxisLabels(ctx, vp, colors, majorX, majorY) {
-  const { xMin, xMax, yMin, yMax } = worldBounds(vp);
-  const [ox, oy] = toScreen(vp, 0, 0);
+function drawAxisLabels(ctx, vp, colors, tx, ty) {
+  const [ox, oy] = origin(vp);
   ctx.fillStyle = colors.label;
   ctx.font = FONT;
 
@@ -57,20 +67,26 @@ function drawAxisLabels(ctx, vp, colors, majorX, majorY) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   const labelY = Math.min(Math.max(oy + 5, 4), vp.height - 18);
-  for (const x of ticks(xMin, xMax, majorX)) {
-    if (Math.abs(x) < majorX * 1e-9) continue;
-    label(ctx, formatTick(x, majorX), toScreen(vp, x, 0)[0], labelY, colors);
-  }
+  tx.major.forEach((x, k) => {
+    if (!tx.labels[k]) return;
+    // Skip labels the edge of the canvas would cut (log axes often end on a decade line).
+    const sx = screenX(vp, x);
+    const half = ctx.measureText(tx.labels[k]).width / 2;
+    if (sx - half < 1 || sx + half > vp.width - 1) return;
+    label(ctx, tx.labels[k], sx, labelY, colors);
+  });
 
   // y labels: right of the y axis, or pinned to the left/right edge.
   const pinRight = ox > vp.width - 40;
   ctx.textAlign = pinRight ? 'right' : 'left';
   ctx.textBaseline = 'middle';
   const labelX = pinRight ? vp.width - 4 : Math.max(ox + 5, 4);
-  for (const y of ticks(yMin, yMax, majorY)) {
-    if (Math.abs(y) < majorY * 1e-9) continue;
-    label(ctx, formatTick(y, majorY), labelX, toScreen(vp, 0, y)[1], colors);
-  }
+  ty.major.forEach((y, k) => {
+    const sy = screenY(vp, y);
+    // On log y the x labels run along the bottom edge: keep y labels out of that row.
+    if (!ty.labels[k] || sy < 7 || sy > vp.height - 7) return;
+    if (ty.labels[k] && !(vp.logY && sy > labelY - 8)) label(ctx, ty.labels[k], labelX, sy, colors);
+  });
 
   if (ox >= 0 && ox <= vp.width && oy >= 0 && oy <= vp.height) {
     ctx.textAlign = 'right';
@@ -80,21 +96,21 @@ function drawAxisLabels(ctx, vp, colors, majorX, majorY) {
 }
 
 export function drawCartesianGrid(ctx, vp, colors) {
-  const { xMin, xMax, yMin, yMax } = worldBounds(vp);
-  const { majorX, majorY, minorX, minorY } = gridSteps(vp);
+  const tx = axisTicks(vp, 'x');
+  const ty = axisTicks(vp, 'y');
 
   ctx.save();
   ctx.lineWidth = 1;
   ctx.strokeStyle = colors.gridMinor;
   ctx.beginPath();
-  strokeVertical(ctx, vp, ticks(xMin, xMax, minorX));
-  strokeHorizontal(ctx, vp, ticks(yMin, yMax, minorY));
+  strokeVertical(ctx, vp, tx.minor);
+  strokeHorizontal(ctx, vp, ty.minor);
   ctx.stroke();
 
   ctx.strokeStyle = colors.gridMajor;
   ctx.beginPath();
-  strokeVertical(ctx, vp, ticks(xMin, xMax, majorX));
-  strokeHorizontal(ctx, vp, ticks(yMin, yMax, majorY));
+  strokeVertical(ctx, vp, tx.major);
+  strokeHorizontal(ctx, vp, ty.major);
   ctx.stroke();
 
   drawAxes(ctx, vp, colors);
@@ -102,9 +118,8 @@ export function drawCartesianGrid(ctx, vp, colors) {
 }
 
 export function drawCartesianLabels(ctx, vp, colors) {
-  const { majorX, majorY } = gridSteps(vp);
   ctx.save();
-  drawAxisLabels(ctx, vp, colors, majorX, majorY);
+  drawAxisLabels(ctx, vp, colors, axisTicks(vp, 'x'), axisTicks(vp, 'y'));
   ctx.restore();
 }
 

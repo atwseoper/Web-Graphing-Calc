@@ -6,6 +6,7 @@
 // is one undo step.
 import { dragPlan, nearestOnPath, solvePair, pairCondition, MAX_CONDITION } from '../expr/drag.js';
 import { sliderRange, snapToStep, valueText } from '../expr/slider.js';
+import { axisX, axisY } from '../plot/viewport.js';
 
 function fieldValue(analysis, text) {
   if (!text || !text.trim()) return null;
@@ -65,12 +66,22 @@ export function createPointDrag({ store, getAnalysis, history }) {
     return names.map((n) => c.analysis.rows[c.sliders.get(n)].value);
   };
 
-  // Does this point row get a handle? scale: [px per unit in x, in y].
-  function isDraggable(rowId, scale) {
+  // The point's position in axis coordinates (log10 on a log axis, Phase 7a), where
+  // screen distance is proportional to distance, with the scales that go with it.
+  function inAxes(point, view) {
+    const scale = [view.scaleX, view.scaleY];
+    if (!view.logX && !view.logY) return { point, scale, at: (t) => t };
+    const at = (p) => [axisX(view, p[0]), axisY(view, p[1])];
+    return { point: (...v) => at(point(...v)), scale, at };
+  }
+
+  // Does this point row get a handle? view: the graph's viewport.
+  function isDraggable(rowId, view) {
     const p = planFor(rowId);
     if (!p) return false;
     if (p.plan.kind !== 'solve') return true;
-    return pairCondition(p.point, ...sliderValues(p.plan.names), scale) < MAX_CONDITION;
+    const m = inAxes(p.point, view);
+    return pairCondition(m.point, ...sliderValues(p.plan.names), m.scale) < MAX_CONDITION;
   }
 
   function rangeOf(row, value, analysis) {
@@ -94,9 +105,11 @@ export function createPointDrag({ store, getAnalysis, history }) {
     return { ...p, rowIds, values, ranges };
   }
 
-  // target: [x, y] where the point should go (world units); scale: px per unit.
-  function move(session, target, scale) {
-    const { plan, point } = session;
+  // target: [x, y] where the point should go (world units); view: the graph's viewport.
+  function move(session, worldTarget, view) {
+    const { plan } = session;
+    const { point, scale, at } = inAxes(session.point, view);
+    const target = plan.kind === 'axis' ? worldTarget : at(worldTarget);
     let raw;
     if (plan.kind === 'axis') {
       raw = [target[plan.axis]];

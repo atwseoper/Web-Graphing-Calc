@@ -183,7 +183,10 @@ export function createFitPanel({ store, getAnalysis, fitCache, onSendToGraph }) 
     c.residBtn.setAttribute('aria-pressed', String(!!fit.residuals));
     if (c.bands.value !== fit.bands) c.bands.value = fit.bands;
     setHidden(c.residBox, !fit.residuals);
-    if (fit.residuals) requestAnimationFrame(() => drawResiduals(c, c.result, set, fit));
+    if (fit.residuals) {
+      const logX = store.get().settings.xAxis === 'log';
+      requestAnimationFrame(() => drawResiduals(c, c.result, set, fit, logX));
+    }
     setHidden(c.formula, false);
     setText(c.formula, prettyEquation(displayEquation(c.result)) || c.result.model.formula);
     c.formula.title = c.result.model.formula;
@@ -330,13 +333,14 @@ function prettyEquation(text) {
   return text.replace(/(\d)e([-+]?\d)/g, '$1E$2').replace(/-/g, MINUS).replace(/\*/g, '·').replace(/E(−?\d)/g, '×10^$1');
 }
 
-// Residuals (y − fit) against x, with σy error bars for weighted fits.
-function drawResiduals(c, r, set, fit) {
+// Residuals (y − fit) against x, with σy error bars for weighted fits. With a log x
+// axis on the graph, x is on a log scale here too (points at x ≤ 0 are left out).
+function drawResiduals(c, r, set, fit, logX = false) {
   const canvas = c.residCanvas;
   const w = Math.round(canvas.clientWidth);
   const hgt = 120;
   if (w < 10) return;
-  const key = `${w}|${fit.color}|${set.color}`;
+  const key = `${w}|${fit.color}|${set.color}|${logX}`;
   if (c.drawn === r && c.drawnKey === key) return;
   c.drawn = r;
   c.drawnKey = key;
@@ -348,10 +352,12 @@ function drawResiduals(c, r, set, fit) {
   const cs = getComputedStyle(document.documentElement);
   const col = (n) => cs.getPropertyValue(n).trim();
   ctx.clearRect(0, 0, w, hgt);
-  const { x, r: res, s } = r.residuals;
-  if (!x.length) return;
-  let xMin = Math.min(...x);
-  let xMax = Math.max(...x);
+  const { x: rawX, r: res, s } = r.residuals;
+  const x = logX ? rawX.map((v) => (v > 0 ? Math.log10(v) : NaN)) : rawX;
+  const xs = x.filter(Number.isFinite);
+  if (!xs.length) return;
+  let xMin = Math.min(...xs);
+  let xMax = Math.max(...xs);
   if (xMax === xMin) { xMin -= 1; xMax += 1; }
   const padX = (xMax - xMin) * 0.04;
   let m = 0;
@@ -374,7 +380,7 @@ function drawResiduals(c, r, set, fit) {
   ctx.font = '11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   ctx.fillStyle = col('--text-muted');
   ctx.textBaseline = 'top';
-  ctx.fillText('residuals: y − fit', left, 2);
+  ctx.fillText(logX ? 'residuals: y − fit (log x)' : 'residuals: y − fit', left, 2);
   ctx.textAlign = 'right';
   ctx.fillText(`scale ±${formatNumber(m, 2)}`, right, 2);
   if (s) {
@@ -382,6 +388,7 @@ function drawResiduals(c, r, set, fit) {
     ctx.globalAlpha = 0.6;
     ctx.beginPath();
     res.forEach((v, i) => {
+      if (!Number.isFinite(x[i])) return;
       ctx.moveTo(sx(x[i]), sy(v - s[i]));
       ctx.lineTo(sx(x[i]), sy(v + s[i]));
     });
@@ -392,6 +399,7 @@ function drawResiduals(c, r, set, fit) {
   ctx.beginPath();
   const rad = x.length > 500 ? 2 : 3;
   res.forEach((v, i) => {
+    if (!Number.isFinite(x[i])) return;
     ctx.moveTo(sx(x[i]) + rad, sy(v));
     ctx.arc(sx(x[i]), sy(v), rad, 0, 2 * Math.PI);
   });

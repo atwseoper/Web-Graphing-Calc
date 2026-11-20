@@ -33,6 +33,11 @@ export function localeDecimal() {
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : many}`;
 
 export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel }) {
+  // Which axes are log (Phase 7a): framing a data set then counts only values above 0.
+  const logAxes = () => {
+    const { settings } = store.get();
+    return { positiveX: settings.xAxis === 'log', positiveY: settings.yAxis === 'log' };
+  };
   let imp = null; // import in progress
   let choosing = false; // the "add data" chooser is open
   let confirmDelete = 0; // set id waiting for a second tap on delete
@@ -150,7 +155,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   const frameBtn = h('button', { type: 'button', class: 'row-btn', 'aria-label': 'Zoom to this data set', html: ICONS.fit });
   frameBtn.addEventListener('click', () => {
     const set = latest && activeSet(latest);
-    const b = set && dataBounds([{ ...set, hidden: false }]);
+    const b = set && dataBounds([{ ...set, hidden: false }], logAxes());
     if (b) onFrame(b);
   });
   const deleteBtn = h('button', { type: 'button', class: 'row-btn set-delete', 'aria-label': 'Delete this data set', html: ICONS.trash });
@@ -346,7 +351,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     if (id === null) return;
     imp = null;
     const set = store.get().data.sets.find((s) => s.id === id);
-    const b = set && dataBounds([set]);
+    const b = set && dataBounds([set], logAxes());
     if (b) onFrame(b);
     rerender();
   }
