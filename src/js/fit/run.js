@@ -80,7 +80,7 @@ export function runFit(analysis, set, fit, options = {}) {
   if (solved.error) return { error: solved.error, notes };
   if (solved.notes) notes.push(...solved.notes);
 
-  const { values, covUnscaled, rss, yhat } = solved;
+  const { covUnscaled, rss, yhat } = solved;
   const dof = n - p;
   // Weighted mean and total sum of squares, for R².
   let sw = 0;
@@ -97,7 +97,9 @@ export function runFit(analysis, set, fit, options = {}) {
   const s2 = dof > 0 ? rss / dof : NaN;
   const factor = weighted ? 1 : s2;
   const cov = covUnscaled.map((row) => row.map((v) => v * factor));
-  const se = values.map((_, k) => Math.sqrt(cov[k][k]));
+  const se = solved.values.map((_, k) => Math.sqrt(cov[k][k]));
+  const atNoise = noiseTest(model, solved, x, y);
+  const values = cleanValues(solved.values, atNoise);
   const q = weighted ? Z95 : dof > 0 ? tQuantile(0.975, dof) : NaN;
   const ci = values.map((v, k) => [v - q * se[k], v + q * se[k]]);
   const corr = cov.map((row, i) => row.map((v, j) => v / Math.sqrt(cov[i][i] * cov[j][j])));
@@ -105,7 +107,10 @@ export function runFit(analysis, set, fit, options = {}) {
 
   // Honest numerics: say when parameters are barely determined, or χ² disagrees with σy.
   if (dof > 0) {
-    const loose = model.params.filter((_, k) => Number.isFinite(se[k]) && se[k] > Math.abs(values[k]));
+    // A parameter pinned down to rounding error (an exact fit) is well determined, even
+    // when its value is zero and its standard error is a tiny bit of rounding noise.
+    const loose = model.params.filter((_, k) => Number.isFinite(se[k]) && se[k] > Math.abs(values[k])
+      && !atNoise(k, se[k]));
     if (loose.length) {
       const names = loose.map((n) => n.replace(/_(\d+)/, (_, d) => d.split('').map((c) => '₀₁₂₃₄₅₆₇₈₉'[c]).join('')));
       notes.push(`${names.join(', ')} ${loose.length === 1 ? 'is' : 'are'} poorly determined: the standard error is larger than the value. The data may not pin ${loose.length === 1 ? 'it' : 'them'} down, or the model may have more parameters than it needs.`);
@@ -141,6 +146,75 @@ export function runFit(analysis, set, fit, options = {}) {
     result.equation = null;
   }
   return result;
+}
+
+// ---- rounding noise ----------------------------------------------------------------------
+//
+// Least squares in floating point leaves rounding noise in parameters whose exact value is
+// zero: fitting y = x² to (1, 1), (2, 4), (3, 9), (4, 16) gives a₀ ≈ −6e−15, a₁ ≈ 2e−15.
+// Such a value is set to exactly zero. Polynomials: when it is within a rounding-error
+// bound worked out from the centred fit (POLY_NOISE allows for error growth in the QR
+// solve and the conversion to powers of x). Other models: when zeroing it changes the
+// fitted values at the data points by no more than NOISE_TOL of the size of the sum that
+// produces them (so heavy cancellation raises the bar rather than lowering it).
+export const NOISE_TOL = 1e-11;
+const POLY_NOISE = 2;
+
+// effectSizes(...) -> { scale, effect(k, delta), negligible(k, delta) }: how much changing
+// parameter k by delta moves the fitted values at the data points, against `scale`.
+export function effectSizes(model, values, x, y, yhat) {
+  const p = values.length;
+  const n = x.length;
+  const frame = new Float64Array(p + 1);
+  let scale = 0;
+  for (let i = 0; i < n; i++) scale = Math.max(scale, Math.abs(y[i]), Math.abs(yhat[i]));
+  let effect;
+  if (model.linear && model.grads) {
+    // f = g₀(x) + Σ pⱼ·gⱼ(x): parameter k moves f by delta·gₖ(x). The scale is the
+    // largest sum of term sizes |g₀| + Σ|pⱼ·gⱼ|, the size of the numbers being added.
+    const gmax = new Array(p).fill(0);
+    for (let i = 0; i < n; i++) {
+      frame[0] = x[i];
+      for (let k = 1; k <= p; k++) frame[k] = 0;
+      let sum = Math.abs(model.f(frame));
+      for (let k = 0; k < p; k++) {
+        const g = Math.abs(model.grads[k](frame));
+        if (g > gmax[k]) gmax[k] = g;
+        sum += Math.abs(values[k] * g);
+      }
+      if (sum > scale) scale = sum;
+    }
+    effect = (k, delta) => Math.abs(delta) * gmax[k];
+  } else {
+    effect = (k, delta) => {
+      let worst = 0;
+      for (let i = 0; i < n; i++) {
+        frame[0] = x[i];
+        for (let j = 0; j < p; j++) frame[j + 1] = values[j];
+        frame[k + 1] += delta;
+        const d = Math.abs(model.f(frame) - yhat[i]);
+        if (!(d <= worst)) worst = d; // NaN counts as a large change
+      }
+      return worst;
+    };
+  }
+  return {
+    scale,
+    effect,
+    negligible: (k, delta) => scale > 0 && effect(k, delta) <= NOISE_TOL * scale,
+  };
+}
+
+// noiseTest(...) -> atNoise(k, amount): is a change of `amount` in parameter k no bigger
+// than rounding error? Polynomial solves supply a bound per coefficient (solved.noise).
+export function noiseTest(model, solved, x, y) {
+  if (solved.noise) return (k, amount) => Math.abs(amount) <= solved.noise[k];
+  const size = effectSizes(model, solved.values, x, y, solved.yhat);
+  return (k, amount) => size.negligible(k, amount);
+}
+
+export function cleanValues(values, atNoise) {
+  return values.map((v, k) => (v !== 0 && atNoise(k, v) ? 0 : v));
 }
 
 // ---- models linear in their parameters ---------------------------------------------------
@@ -227,6 +301,19 @@ function solvePolynomial(x, y, sig, deg) {
     }
   }
   const values = T.map((row) => row.reduce((s, v, k) => s + v * r.x[k], 0));
+  // Rounding-error size of each coefficient of x^j: the centred coefficients are good to
+  // about κ·ε·max|r| (κ = condition number of the centred problem, estimated from (AᵀA)⁻¹
+  // and the column sizes), and converting to powers of x multiplies that by Σₖ|T[j][k]|.
+  let rmax = 0;
+  let covMax = 0;
+  let colMax = 0;
+  for (let k = 0; k < p; k++) {
+    rmax = Math.max(rmax, Math.abs(r.x[k]));
+    covMax = Math.max(covMax, r.cov[k][k]);
+    colMax = Math.max(colMax, cols[k].reduce((s, v) => s + v * v, 0));
+  }
+  const kappa = Math.sqrt(covMax * colMax);
+  const noise = T.map((row) => POLY_NOISE * Number.EPSILON * (1 + kappa) * rmax * row.reduce((s, v) => s + Math.abs(v), 0));
   const covUnscaled = T.map((ri) => T.map((rj) => {
     let s = 0;
     for (let a = 0; a < p; a++) for (let b2 = 0; b2 < p; b2++) s += ri[a] * r.cov[a][b2] * rj[b2];
@@ -251,7 +338,7 @@ function solvePolynomial(x, y, sig, deg) {
   };
   return {
     method: 'Linear least squares (QR)', values, covUnscaled, rss: r.rss,
-    yhat: x.map(f), f, gradVar,
+    yhat: x.map(f), f, gradVar, noise,
   };
 }
 
