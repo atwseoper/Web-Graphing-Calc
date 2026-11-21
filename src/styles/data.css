@@ -291,7 +291,7 @@
 
 /* Dropping a file anywhere on the page */
 #app.is-dropping::after {
-  content: "Drop a CSV file to import it";
+  content: "Drop a CSV file or an image to import it";
   position: fixed;
   inset: 8px;
   z-index: 50;

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calibrate, toWorld, toImage, resolution, roundToResolution, digitisedPoints, gridLines, invert3,
-  emptyRefs, REFS,
+  emptyRefs, REFS, nameFromImage,
 } from '../src/js/data/digitise.js';
 
 const close = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
@@ -268,4 +268,12 @@ test('gridLines on a perspective photo stops at the horizon', () => {
   const lines = gridLines(r.map, 1500, 1500);
   assert.ok(lines.length > 4);
   for (const l of lines) for (const [px, py] of l.points) assert.ok(toWorld(r.map, px, py));
+});
+
+test('nameFromImage', () => {
+  assert.equal(nameFromImage('IMG_2041.JPG'), 'IMG_2041');
+  assert.equal(nameFromImage('C:\\Users\\me\\Pictures\\cooling curve.png'), 'cooling curve');
+  assert.equal(nameFromImage('Pasted image'), 'Pasted image');
+  assert.equal(nameFromImage(''), '');
+  assert.equal(nameFromImage('x'.repeat(60) + '.webp').length, 40);
 });

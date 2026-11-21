@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, Phase 5 makes the installed app work offline and has shared links ask before they open, and Phase 6 adds draggable points, Riemann sums, Taylor polynomials and secant → tangent. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, Phase 5 makes the installed app work offline and has shared links ask before they open, Phase 6 adds draggable points, Riemann sums, Taylor polynomials and secant → tangent, Phase 7 adds log axes and statistics, and Phase 8 reads data points off a photo of a graph. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -16,6 +16,7 @@ Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphin
 - Statistics: summary statistics of each column (mean, median, both standard deviations, quartiles by the TI-84 method or interpolated, IQR, correlation r), histograms and box plots; normal, t, χ², binomial and Poisson distribution functions (pdf, cdf, inverse), with probabilities shaded on the graph and discrete distributions drawn as stems
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems and non-linear systems
 - Data: open CSV files or paste spreadsheet cells, with automatic detection of separators, decimal commas (1,5) and headers; several data sets; an editable table; σy error bars
+- Photo digitiser: read data points off a photo or screenshot of a graph, calibrated by its axes (linear or log, even tilted), a known length, or four known points for photos taken at an angle; a magnifier for aiming; the photo itself is never stored
 - Curve fitting: line, polynomial, exponential, power, logarithmic, logistic, sinusoidal, Gaussian and custom models; exact QR for models linear in their parameters, Levenberg–Marquardt for the rest; standard errors, 95% intervals, R², χ² for weighted fits, confidence and prediction bands, residual plots; export of data and results. Validated against the NIST StRD certified values.
 - Undo and redo; share a whole project (graphs, data and fits) as a link, with nothing uploaded (opening one asks first); save and open project files; save the graph as a PNG with a key; install it on your phone's home screen or as a Windows app, where it starts with no connection and offers new versions with a “New version · Reload” message
 
