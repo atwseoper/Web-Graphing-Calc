@@ -14,6 +14,7 @@ import {
   columnValues, pairs, describe, correlation, setHistogram, QUARTILE_METHODS, QUARTILE_NAMES,
 } from '../data/summary.js';
 import { downloadText, copyText, flashLabel, fileNameFor } from './export.js';
+import { createDigitiser } from './digitiser.js';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const PAGE_ROWS = 100;
@@ -98,20 +99,36 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     fileInput.value = '';
     if (file) openFile(file);
   });
+  // Photo digitiser (Phase 8). On phones, an image picker offers the camera too.
+  const imageInput = h('input', { type: 'file', hidden: true, accept: 'image/*' });
+  imageInput.addEventListener('change', () => {
+    const file = imageInput.files && imageInput.files[0];
+    imageInput.value = '';
+    if (file) openImage(file);
+  });
+  const digitiser = createDigitiser({
+    getAxes: () => {
+      const { settings } = store.get();
+      return { xLog: settings.xAxis === 'log', yLog: settings.yAxis === 'log' };
+    },
+    onDone: (pts, name) => addDigitised(pts, name),
+  });
   const startBtn = (icon, label, detail, onClick) => h('button', { type: 'button', class: 'start-btn', onClick },
     h('span', { class: 'start-icon', html: ICONS[icon] }),
     h('span', { class: 'start-text' }, h('b', {}, label), h('span', {}, detail)));
   const startCancel = h('button', { type: 'button', class: 'text-btn', onClick: () => { choosing = false; rerender(); } }, 'Cancel');
   const startError = h('p', { class: 'expr-status is-error data-error', hidden: true, 'aria-live': 'polite' });
   const startBox = h('section', { class: 'data-start' },
-    h('p', { class: 'data-intro' }, 'Load data from a CSV file or paste cells from a spreadsheet, then fit a curve to the points.'),
+    h('p', { class: 'data-intro' }, 'Load data from a CSV file, paste cells from a spreadsheet or read points off a photo of a graph, then fit a curve to them.'),
     h('div', { class: 'start-btns' },
       startBtn('file', 'Open a file', 'CSV or text: from your phone, Drive or Downloads', () => fileInput.click()),
       startBtn('paste', 'Paste data', 'Cells copied from Sheets or Excel, or CSV text', () => startPaste()),
-      startBtn('table', 'Type it in', 'Start an empty table', () => newEmptySet())),
+      startBtn('table', 'Type it in', 'Start an empty table', () => newEmptySet()),
+      startBtn('camera', 'From a photo', 'A photo or screenshot of a graph: tap points to read them off', () => imageInput.click())),
     startError,
     startCancel,
-    fileInput);
+    fileInput,
+    imageInput);
 
   // ---- import preview ----------------------------------------------------------------------
   const sel = (label, onChange) => {
@@ -370,7 +387,36 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     requestAnimationFrame(() => pasteArea.focus());
   }
 
+  const isImage = (file) => /^image\//.test(file.type) || /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif)$/i.test(file.name || '');
+
+  async function openImage(file, fileName = file.name) {
+    if (store.get().data.sets.length >= MAX_SETS) {
+      showStartError(`You can have up to ${MAX_SETS} data sets. Delete one to add another.`);
+      return;
+    }
+    const problem = await digitiser.open(file, fileName || '');
+    if (problem) showStartError(problem);
+  }
+
+  // "Add points" in the digitiser: a new data set, framed on the graph.
+  function addDigitised(pts, name) {
+    const points = pts.map((p) => ({ x: p.x, y: p.y, s: null, off: false }));
+    const id = addSet(name || 'Photo', points, { decimal: localeDecimal() });
+    if (id === null) return false;
+    choosing = false;
+    imp = null;
+    const set = store.get().data.sets.find((st) => st.id === id);
+    const b = set && dataBounds([set], logAxes());
+    if (b) onFrame(b);
+    rerender();
+    return true;
+  }
+
   async function openFile(file) {
+    if (isImage(file)) {
+      await openImage(file);
+      return;
+    }
     if (file.size > MAX_FILE_BYTES) {
       showStartError(`That file is ${(file.size / 1048576).toFixed(1)} MB – the limit is ${MAX_FILE_BYTES / 1048576} MB.`);
       return;
@@ -869,6 +915,8 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   return {
     render,
     openFile: (file) => openFile(file),
+    openImage: (file, name) => openImage(file, name),
+    isDigitising: () => digitiser.isOpen(),
     startPaste,
     pasteText,
   };

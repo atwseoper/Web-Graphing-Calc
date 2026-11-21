@@ -46,6 +46,12 @@ const MIN_SINE = 0.05; // axes closer than ~3° to parallel can't be told apart
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const placed = (r) => !!r && finite(r.px) && finite(r.py);
 
+// A name for the data set from the image's file name: "IMG_2041.jpg" -> "IMG_2041".
+export function nameFromImage(fileName) {
+  const base = String(fileName || '').replace(/^.*[\\/]/, '').replace(/\.(jpe?g|png|gif|webp|bmp|heic|heif|avif|tiff?|svg)$/i, '').trim();
+  return base.slice(0, 40);
+}
+
 export function emptyRefs(method) {
   return Object.fromEntries(REFS[method].map((k) => [k, null]));
 }

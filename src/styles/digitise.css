@@ -1,0 +1,209 @@
+/* Photo digitiser (Phase 8b): a full-screen view over the app */
+.digitiser {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+html.is-digitising, html.is-digitising body { overflow: hidden; }
+
+.dg-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: calc(6px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 6px calc(4px + env(safe-area-inset-left));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.dg-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dg-close, .dg-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dg-close:hover, .dg-icon-btn:hover:not(:disabled) { background: var(--surface-2); }
+.dg-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.dg-close.is-confirm { color: var(--error); }
+.dg-close-text:empty { display: none; }
+.dg-done { flex: none; margin-left: 4px; padding: 0 14px; }
+
+.dg-stage {
+  position: relative;
+  overflow: hidden;
+  background: #2a2d33;
+}
+.dg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.dg-canvas.is-panning { cursor: grabbing; }
+.dg-tools {
+  position: absolute;
+  top: 10px;
+  right: calc(10px + env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dg-tools .tool-btn[aria-pressed="true"] { color: var(--accent); }
+.dg-tools .tool-btn:disabled { opacity: 0.4; cursor: default; }
+
+.dg-loupe-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.dg-loupe {
+  width: 128px;
+  height: 128px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.dg-loupe-text {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(20, 22, 26, 0.85);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.dg-panel {
+  max-height: 46dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.dg-cal, .dg-points { display: grid; gap: 8px; }
+.dg-hint { margin: 2px; color: var(--text-muted); font-size: 0.88rem; line-height: 1.4; }
+.dg-status { margin: 2px; font-size: 0.88rem; line-height: 1.4; }
+.dg-status:empty { display: none; }
+.dg-status.is-error { color: var(--error); }
+.dg-status.is-ok { color: #2b8a3e; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  .dg-status.is-ok { color: #69db7c; }
+}
+
+.dg-log-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+}
+.dg-log-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+.dg-log button { min-height: 34px; }
+
+.dg-refs { display: grid; gap: 4px; }
+.dg-ref {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.dg-ref.is-active { background: var(--accent-soft); }
+.dg-ref.is-error { border-color: var(--error); }
+.dg-ref-btn {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 14px auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 44px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dg-ref-dot {
+  grid-row: span 2;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ref-color);
+}
+.dg-ref-name { font-weight: 600; }
+.dg-ref-state { font-size: 0.75rem; color: var(--text-muted); }
+.dg-fields { display: flex; gap: 8px; flex: none; }
+.dg-field { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; color: var(--text-muted); }
+.dg-value { width: 84px; height: 40px; }
+
+.dg-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dg-count-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dg-count { font-weight: 600; }
+.dg-count-row .text-btn, .dg-sel .text-btn { margin: 0; }
+.dg-sel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.dg-sel-text { font-family: var(--mono); font-size: 0.85rem; }
+.dg-del { color: var(--error); }
+
+@media (max-width: 380px) {
+  .dg-value { width: 68px; }
+  .dg-fields { gap: 4px; }
+}
+
+/* Landscape tablets and computers: the panel goes beside the photo. */
+@media (min-width: 720px) and (orientation: landscape) {
+  .digitiser {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .dg-bar { grid-column: 1 / -1; }
+  .dg-panel {
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}

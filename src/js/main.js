@@ -363,7 +363,7 @@ window.addEventListener('drop', (e) => {
   dragDepth = 0;
   appEl.classList.remove('is-dropping');
   const file = e.dataTransfer.files[0];
-  if (!file) return;
+  if (!file || dataPanel.isDigitising()) return;
   if (/\.json$/i.test(file.name) || file.type === 'application/json') {
     shareMenu.openFile(file);
     return;
@@ -373,7 +373,14 @@ window.addEventListener('drop', (e) => {
 });
 document.addEventListener('paste', (e) => {
   const t = e.target;
-  if (store.get().ui.tab !== 'data' || (t instanceof HTMLElement && t.closest('input, textarea, [contenteditable]'))) return;
+  if (store.get().ui.tab !== 'data' || dataPanel.isDigitising() || (t instanceof HTMLElement && t.closest('input, textarea, [contenteditable]'))) return;
+  // A copied image or screenshot opens in the photo digitiser (Phase 8).
+  const image = e.clipboardData && [...e.clipboardData.files].find((f) => /^image\//.test(f.type));
+  if (image) {
+    e.preventDefault();
+    dataPanel.openImage(image, 'Pasted image');
+    return;
+  }
   const text = e.clipboardData && e.clipboardData.getData('text/plain');
   if (!text || !text.trim()) return;
   e.preventDefault();
