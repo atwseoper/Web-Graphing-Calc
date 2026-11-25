@@ -119,9 +119,46 @@ html.is-digitising, html.is-digitising body { overflow: hidden; }
 .dg-status:empty { display: none; }
 .dg-status.is-error { color: var(--error); }
 .dg-status.is-ok { color: #2b8a3e; font-weight: 600; }
+.dg-status.is-warn { color: #b35c00; font-weight: 600; }
 @media (prefers-color-scheme: dark) {
   .dg-status.is-ok { color: #69db7c; }
+  .dg-status.is-warn { color: #ffa94d; }
 }
+
+/* "How to use this" guide (collapsible). */
+.dg-guide {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.dg-guide > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.dg-guide > summary::-webkit-details-marker { display: none; }
+.dg-guide > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.dg-guide[open] > summary::before { transform: rotate(45deg); }
+.dg-guide-body { padding: 0 12px 10px; }
+.dg-guide-body p { margin: 0 0 6px; }
+.dg-guide-body ol { margin: 0 0 6px; padding-left: 1.4em; }
+.dg-guide-body li + li { margin-top: 3px; }
+.dg-guide-note { color: var(--text-muted); }
 
 .dg-log-row {
   display: grid;

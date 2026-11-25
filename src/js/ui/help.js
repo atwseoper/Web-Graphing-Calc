@@ -102,9 +102,9 @@ function dataPage() {
       p('Cells that aren\'t numbers are listed in the preview and left blank, so you can fix them in the table afterwards.'),
     ),
     section('Points from a photo',
-      p('First calibrate: tell the app how the photo maps to x and y. Choose one of three ways:'),
+      p('First calibrate: tell the app how the photo maps to x and y. Choose one of three ways (', b('How to use this'), ' in the digitiser goes through each one step by step):'),
       ul(
-        [b('Axes'), ' (most graphs): tap two points on the x axis and two on the y axis whose values you know, such as labelled tick marks, and type their values. x₁ and y₁ can both be the origin. Each axis can be linear or log. A tilted or skewed photo is fine.'],
+        [b('Axes'), ' (most graphs): tap two points on the x axis and two on the y axis whose values you know, such as labelled tick marks, and type their values. x₁ and y₁ can both be the origin. All four go on the axis lines themselves, not on the curve: the curve\'s points come after ', b('Next'), '. Each axis can be linear or log. A tilted or skewed photo is fine; if the axes come out far from a right angle, a warning asks you to check the markers.'],
         [b('Known length'), ' (real objects, no axes): tap an origin, then a point a known length away along the +x direction, and type the length. +y is a quarter turn anticlockwise from +x.'],
         [b('4 points'), ' (a photo taken at an angle): tap four points whose x and y you know, such as the corners of a rectangle of known size or four grid crossings, and type their values. This undoes the perspective.'],
       ),

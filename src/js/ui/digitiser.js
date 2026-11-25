@@ -33,15 +33,36 @@ const COLORS = { x: '#2f6fed', y: '#d6336c', ref: '#f08c00', point: '#0ca678', e
 const refColor = (k) => (k[0] === 'x' ? COLORS.x : k[0] === 'y' ? COLORS.y : COLORS.ref);
 
 const HINTS = {
-  x1: 'Tap a point on the x axis whose value you know, such as a labelled tick mark.',
-  x2: 'Tap a second labelled point on the x axis, well away from x₁.',
-  y1: 'Tap a point on the y axis whose value you know.',
-  y2: 'Tap a second labelled point on the y axis, well away from y₁.',
+  x1: 'Tap a labelled tick mark on the x axis itself (the horizontal axis line, not the curve), then type its value.',
+  x2: 'Tap a second labelled tick on the x axis, well away from x₁, and type its value.',
+  y1: 'Tap a labelled tick mark on the y axis itself (the vertical axis line). The origin is fine.',
+  y2: 'Tap a second labelled tick on the y axis, well away from y₁, and type its value.',
   o: 'Tap where the measurement starts. This is the origin, (0, 0) unless you type other values.',
   p: 'Tap a point a known length from the origin, in the +x direction (along a ruler, for example).',
   p1: 'Tap four points whose x and y you know, such as the corners of a rectangle of known size or four grid crossings.',
 };
 HINTS.p2 = HINTS.p1; HINTS.p3 = HINTS.p1; HINTS.p4 = HINTS.p1;
+
+// The "How to use this" guide for each calibration method: [when to use it, steps].
+const LAST_STEP = 'Check the faint grid drawn over the photo lines up with the photo’s own grid, then tap Next and tap the points you want to read off the curve.';
+const GUIDES = {
+  axes: ['For most graphs and screenshots, where both axes have numbers on them.', [
+    'Tap x₁ on the x axis (the horizontal line), on a tick mark you can read, and type its value.',
+    'Tap x₂ on the x axis too, on another tick well away from x₁, and type its value.',
+    'Do the same for y₁ and y₂ on the y axis (the vertical line). x₁ and y₁ can both be the origin.',
+    LAST_STEP,
+  ], 'All four markers go on the axes, not on the curve: the curve’s points come after Next. Markers far apart give more accurate values.'],
+  length: ['For a photo of a real object with no axes, such as an arch or a jet of water, with something of known size in it.', [
+    'Tap the Origin, where measuring starts. It is (0, 0) unless you type other values.',
+    'Tap End, a known distance from the origin in the +x direction (along a ruler in the photo, say), and type that length.',
+    LAST_STEP,
+  ], 'Take the photo straight on, so lengths aren’t distorted. +y is a quarter turn anticlockwise from +x.'],
+  four: ['For a graph or object photographed at an angle, so it looks like a trapezium rather than a rectangle.', [
+    'Tap four points whose x and y you know, such as four grid crossings or the corners of a rectangle of known size.',
+    'Type the x and y of each one. No three of them may be in a line.',
+    LAST_STEP,
+  ], 'This undoes the perspective. Points spread out near the corners of the area you’ll digitise work best.'],
+};
 
 const INPUT_ATTRS = {
   type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next',
@@ -181,9 +202,22 @@ export function createDigitiser({ getAxes, onDone }) {
       refList.append(row);
     }
   }
+  // "How to use this": open when the view opens, closed once the first marker is placed,
+  // unless it has been opened or closed by hand.
+  const guideBodies = {};
+  for (const m of METHODS) {
+    const [when, steps, note] = GUIDES[m];
+    guideBodies[m] = h('div', { class: 'dg-guide-body', hidden: true },
+      h('p', {}, when), h('ol', {}, ...steps.map((s) => h('li', {}, s))), h('p', { class: 'dg-guide-note' }, note));
+  }
+  const guideSummary = h('summary', {}, 'How to use this');
+  const guide = h('details', { class: 'dg-guide' }, guideSummary, ...Object.values(guideBodies));
+  let guideAuto = true;
+  guideSummary.addEventListener('click', () => { guideAuto = false; });
+
   const calHint = h('p', { class: 'dg-hint', 'aria-live': 'polite' });
   const calStatus = h('p', { class: 'dg-status', 'aria-live': 'polite' });
-  const calBox = h('div', { class: 'dg-cal' }, methodSeg, logRow, calHint, refList, calStatus);
+  const calBox = h('div', { class: 'dg-cal' }, methodSeg, guide, logRow, calHint, refList, calStatus);
 
   // Points panel.
   const ptHint = h('p', { class: 'dg-hint' });
@@ -285,6 +319,7 @@ export function createDigitiser({ getAxes, onDone }) {
       const i = order.indexOf(active);
       const next = [...order.slice(i + 1), ...order.slice(0, i)].find((k) => !refPos[method][k]);
       if (next) active = next;
+      if (guideAuto) { guideAuto = false; guide.open = false; }
     } else {
       if (points.length >= MAX_POINTS) { undoStack.pop(); return; }
       points.push(p);
@@ -764,11 +799,15 @@ export function createDigitiser({ getAxes, onDone }) {
         r.btn.setAttribute('aria-pressed', String(isActive));
         setText(r.state, pos[k] ? (isActive ? 'Placed · tap to move' : 'Placed') : (isActive ? 'Tap the photo' : 'Not placed'));
       }
+      for (const m of METHODS) setHidden(guideBodies[m], m !== method);
       const allPlaced = REFS[method].every((k) => pos[k]);
       setText(calHint, allPlaced
         ? 'Drag a marker to fine-tune it, with the magnifier showing where it is. Zoom in for accuracy.'
         : HINTS[active]);
-      if (cal.ok) {
+      if (cal.ok && cal.warning) {
+        setText(calStatus, cal.warning);
+        calStatus.className = 'dg-status is-warn';
+      } else if (cal.ok) {
         setText(calStatus, 'Calibrated. Check the grid lines match the photo, then tap Next to add points.');
         calStatus.className = 'dg-status is-ok';
       } else {
@@ -804,6 +843,8 @@ export function createDigitiser({ getAxes, onDone }) {
     undoStack = [];
     redoStack = [];
     for (const el of Object.values(inputs)) el.value = '';
+    guideAuto = true;
+    guide.open = true;
     const axes = getAxes ? getAxes() : {};
     xLog = !!axes.xLog;
     yLog = !!axes.yLog;
