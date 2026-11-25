@@ -7,7 +7,8 @@
 // log axis (likewise v and y). Affine mappings (the "axes" and "known length" methods)
 // are the special case whose last row is [0, 0, 1].
 //
-//   calibrate(cal) -> { ok: true, map } | { ok: false, error, refs }
+//   calibrate(cal) -> { ok: true, map } | { ok: true, map, warning, refs } | { ok: false, error, refs }
+//                     (a warning means the mapping works but probably isn't what was meant)
 //
 // cal = { method, xLog, yLog, refs }, where refs depends on the method:
 //   'axes'    { x1, x2, y1, y2 }  each { px, py, value }: two points on each axis line
@@ -43,6 +44,10 @@ export const REF_LABELS = {
 
 const MIN_SEPARATION = 3; // image pixels between reference points
 const MIN_SINE = 0.05; // axes closer than ~3° to parallel can't be told apart
+// Axes further than this from a right angle are accepted with a warning (D60): real graphs,
+// even photographed at a slant, rarely have axes under 60° apart, so it usually means a
+// marker is on the curve rather than on its axis.
+export const WARN_AXES_ANGLE = 60;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const placed = (r) => !!r && finite(r.px) && finite(r.py);
 
@@ -144,7 +149,8 @@ function calibrateAxes({ x1, x2, y1, y2 }, xLog, yLog) {
   const ex = [x2.px - x1.px, x2.py - x1.py];
   const ey = [y2.px - y1.px, y2.py - y1.py];
   const det = ex[0] * ey[1] - ex[1] * ey[0];
-  if (Math.abs(det) < MIN_SINE * Math.hypot(...ex) * Math.hypot(...ey)) {
+  const sine = Math.abs(det) / (Math.hypot(...ex) * Math.hypot(...ey));
+  if (sine < MIN_SINE) {
     return fail('The x-axis and y-axis points are along the same line. Put x₁ and x₂ on the x axis, and y₁ and y₂ on the y axis.', 'x1', 'x2', 'y1', 'y2');
   }
   // Linear part L with L·ex = (u2 − u1, 0) and L·ey = (0, v2 − v1): L = D · [ex ey]⁻¹.
@@ -158,8 +164,17 @@ function calibrateAxes({ x1, x2, y1, y2 }, xLog, yLog) {
     [Lv[0], Lv[1], v1 - Lv[0] * y1.px - Lv[1] * y1.py],
     [0, 0, 1],
   ];
-  return makeMap(H, xLog, yLog, [[x1.px, x1.py]]);
+  const res = makeMap(H, xLog, yLog, [[x1.px, x1.py]]);
+  const angle = axesAngle(sine);
+  if (res.ok && angle < WARN_AXES_ANGLE) {
+    res.warning = `The x and y axes come out only ${angle}° apart, so the grid will be slanted. Check that x₁ and x₂ are on the x axis and y₁ and y₂ on the y axis, not on the curve. If the photo really is that skewed, carry on.`;
+    res.refs = ['x1', 'x2', 'y1', 'y2'];
+  }
+  return res;
 }
+
+// The angle between the two axis lines on the photo, in whole degrees from 0 to 90.
+const axesAngle = (sine) => Math.round((Math.asin(Math.min(1, sine)) * 180) / Math.PI);
 
 // A ruler: an origin and a point a known length along the +x direction. Square pixels,
 // so the same scale applies across; +y is a quarter turn anticlockwise from +x, as seen.

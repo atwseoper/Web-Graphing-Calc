@@ -277,3 +277,56 @@ test('nameFromImage', () => {
   assert.equal(nameFromImage(''), '');
   assert.equal(nameFromImage('x'.repeat(60) + '.webp').length, 40);
 });
+
+test('axes: a warning, not a refusal, when the axes come out far from a right angle', () => {
+  // The markers from a real attempt: x₁ and y₂ were put on the curve y = x² at (1, 1)
+  // and about (0.7, 0.5) instead of on the axes; x₂ and y₁ at the origin.
+  const onCurve = calibrate({
+    method: 'axes',
+    refs: {
+      x1: { px: 989, py: 715, value: 1 }, x2: { px: 657, py: 1048, value: 0 },
+      y1: { px: 657, py: 1048, value: 0 }, y2: { px: 891, py: 882, value: 0.5 },
+    },
+  });
+  assert.equal(onCurve.ok, true);
+  assert.match(onCurve.warning, /only 10° apart/);
+  assert.match(onCurve.warning, /not on the curve/);
+  assert.deepEqual(onCurve.refs, ['x1', 'x2', 'y1', 'y2']);
+
+  // The same photo with the markers on the axes: no warning.
+  const onAxes = calibrate({
+    method: 'axes',
+    refs: {
+      x1: { px: 989, py: 1048, value: 1 }, x2: { px: 657, py: 1048, value: 0 },
+      y1: { px: 657, py: 1048, value: 0 }, y2: { px: 657, py: 882, value: 0.5 },
+    },
+  });
+  assert.equal(onAxes.ok, true);
+  assert.equal(onAxes.warning, undefined);
+  assert.ok(near(toWorld(onAxes.map, 989, 716), 1, 1, 1e-9)); // the curve at (1, 1)
+
+  // Around the threshold: axes 65° apart pass quietly, 55° apart warn.
+  const atAngle = (deg) => {
+    const t = (deg * Math.PI) / 180;
+    return calibrate({
+      method: 'axes',
+      refs: {
+        x1: { px: 100, py: 500, value: 0 }, x2: { px: 400, py: 500, value: 6 },
+        y1: { px: 100, py: 500, value: 0 }, y2: { px: 100 + 300 * Math.cos(t), py: 500 - 300 * Math.sin(t), value: 6 },
+      },
+    });
+  };
+  assert.equal(atAngle(65).warning, undefined);
+  assert.equal(atAngle(115).warning, undefined);
+  assert.match(atAngle(55).warning, /55°/);
+  assert.match(atAngle(130).warning, /50°/);
+  assert.equal(atAngle(55).ok, true);
+
+  // The rotated, slightly sheared scan used above is still fine.
+  const scan = calibrate({
+    method: 'axes',
+    refs: { x1: skewed.axisRef(1, 0, 1), x2: skewed.axisRef(8, 0, 8), y1: skewed.axisRef(0, 1, 1), y2: skewed.axisRef(0, 9, 9) },
+  });
+  assert.equal(scan.ok, true);
+  assert.equal(scan.warning, undefined);
+});
