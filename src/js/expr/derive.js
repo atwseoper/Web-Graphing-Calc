@@ -181,6 +181,7 @@ export function dependsOn(node, v) {
     case 'tuple': return node.items.some((a) => dependsOn(a, v));
     case 'nderiv':
       return node.at ? dependsOn(node.at, v) || (node.v !== v && dependsOn(node.expr, v)) : dependsOn(node.expr, v);
+    case 'lookup': return dependsOn(node.index, v); // L[k] (Phase 9a)
     default: return true;
   }
 }
@@ -217,6 +218,7 @@ export function substitute(node, map) {
       const [v, expr] = avoidCapture(node.v, node.expr, inner);
       return { ...node, v, expr: substitute(expr, inner), at: substitute(node.at ?? sym(node.v), map) };
     }
+    case 'lookup': return { ...node, index: substitute(node.index, map) };
     default: return node;
   }
 }

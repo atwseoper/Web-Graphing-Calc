@@ -3,6 +3,9 @@ import {
   gamma, nCr, nPr, mod, sinExact, cosExact, tanExact, sinDeg, cosDeg, tanDeg,
 } from '../numerics/special.js';
 import { DISTRIBUTION_FUNCTIONS } from '../numerics/distributions.js';
+import {
+  listLength, listSum, listProd, listMean, listMedian, listStdev, listStdevp,
+} from '../numerics/listfns.js';
 
 const R2D = 180 / Math.PI;
 
@@ -56,7 +59,21 @@ export const FUNCTIONS = {
   npr: plain([2, 2], nPr),
   // Probability distributions (Phase 7b): reserved words like sum.
   ...Object.fromEntries(Object.entries(DISTRIBUTION_FUNCTIONS).map(([name, d]) => [name, plain(d.arity, d.fn)])),
+  // Functions of a list (Phase 9a). They are typed with one list, length(L); the list
+  // code (lists.js) passes its elements on as separate arguments. sum(L) and prod(L)
+  // are the one-argument forms of Σ and Π.
+  length: plain([0, Infinity], listLength),
+  mean: plain([0, Infinity], listMean),
+  median: plain([0, Infinity], listMedian),
+  stdev: plain([0, Infinity], listStdev),
+  stdevp: plain([0, Infinity], listStdevp),
+  sum: plain([0, Infinity], listSum),
+  prod: plain([0, Infinity], listProd),
 };
+
+// Functions that take a whole list and give one number (Phase 9a). min and max do too
+// when given a single list.
+export const LIST_FUNCTIONS = new Set(['length', 'mean', 'median', 'stdev', 'stdevp', 'sum', 'prod']);
 
 // Alternative spellings accepted when typing.
 export const ALIASES = {

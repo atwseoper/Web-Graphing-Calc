@@ -1,4 +1,5 @@
-// Settings popover: angle unit, grid type, axis types, keypad mode, about, clear all.
+// Settings popover: angle unit, grid type, axis types, keypad mode, maths preview, where
+// list positions start, about, clear all.
 import { h } from './dom.js';
 import { defaultState } from '../state/defaults.js';
 
@@ -9,6 +10,8 @@ const GROUPS = [
   { key: 'yAxis', label: 'y axis', options: [['linear', 'Linear'], ['log', 'Log']] },
   { key: 'keypad', label: 'On-screen keypad', options: [['auto', 'Auto'], ['always', 'Always'], ['never', 'Never']] },
   { key: 'pretty', label: 'Maths preview under rows', options: [['on', 'Show'], ['off', 'Hide']] },
+  // L[1] is the first element, or L[0] (D61). This device's setting, like the keypad.
+  { key: 'listIndex', label: 'List positions start at', options: [['1', '1'], ['0', '0']] },
 ];
 
 // The x and y axis settings share a row, side by side.

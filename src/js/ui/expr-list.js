@@ -16,6 +16,7 @@ import { isPlottable, isFunctionOfX, fieldValue } from './graph-view.js';
 import { parse } from '../expr/parser.js';
 import { prettyLayout, isRich } from '../expr/pretty.js';
 import { renderMath } from './math-view.js';
+import { listText, countText } from '../expr/lists.js';
 
 const ERROR_DELAY = 900; // ms after the last keystroke before showing an error in the row being edited
 const TABLE_ROWS = 10;
@@ -23,6 +24,8 @@ const MAX_POI_CHIPS = 12;
 const POI_SHORT = { root: 'Root', max: 'Max', min: 'Min', 'y-intercept': 'y-int', intersection: '∩' };
 const MINUS = '−';
 const fmt = (v, sig = 8) => formatNumber(v, sig);
+// A list typed as plain numbers, L = [1, 2, 3], doesn't repeat itself under the row.
+const PLAIN_LIST = /^\s*(?:[A-Za-z](?:_\w+)?\s*=\s*)?\[\s*(?:[-−]?\s*(?:\d+\.?\d*|\.\d+)(?:\s*,\s*[-−]?\s*(?:\d+\.?\d*|\.\d+))*)?\s*\]\s*$/;
 const SLIDER_SWEEP_MS = 4000; // a playing slider crosses its whole range in this time
 
 const INPUT_ATTRS = {
@@ -34,6 +37,7 @@ export function createExprList({
 }) {
   const els = new Map(); // row id -> element refs
   const taylorOpen = new Set(); // row ids whose Taylor coefficient table is open
+  const listOpen = new Set(); // row ids whose whole list is shown (Phase 9a)
   const lastEdit = new Map(); // row id -> timestamp
   let errorTimer = 0;
   let latest = null; // { state, analysis }
@@ -140,6 +144,21 @@ export function createExprList({
     });
     const num = h('span', { class: 'row-num', 'aria-hidden': 'true' });
     const status = h('div', { class: 'expr-status', 'aria-live': 'polite' });
+    // Warnings (lists of different lengths, a position outside a list, curves left out).
+    const warn = h('div', { class: 'expr-status is-warning', hidden: true });
+    // A list's elements (Phase 9a): the first and last few, and all of them on request.
+    const listSummary = h('div', { class: 'list-summary' });
+    const listCount = h('span', { class: 'an-label' });
+    const listMore = h('button', {
+      type: 'button', class: 'chip list-more', 'aria-expanded': 'false',
+      onClick: () => {
+        if (listOpen.has(id)) listOpen.delete(id);
+        else listOpen.add(id);
+        if (latest) render(latest.state, latest.analysis);
+      },
+    });
+    const listAll = h('div', { class: 'list-all', hidden: true, tabindex: '0' });
+    const listBox = h('div', { class: 'expr-list-value', hidden: true }, listSummary, h('div', { class: 'an-row list-more-row' }, listCount, listMore), listAll);
     const pretty = h('div', { class: 'expr-pretty math', 'aria-hidden': 'true', hidden: true });
     input.addEventListener('focus', () => {
       const i = store.get().rows.findIndex((k) => k.id === id);
@@ -345,12 +364,12 @@ export function createExprList({
 
     const li = h('li', { class: 'expr-row', dataset: { id: String(id) } },
       h('div', { class: 'row-left' }, swatch, num),
-      h('div', { class: 'expr-main' }, input, pretty, status, missing, slider, domain, ode, table),
+      h('div', { class: 'expr-main' }, input, pretty, status, listBox, warn, missing, slider, domain, ode, table),
       h('div', { class: 'row-actions' }, analysisBtn, tableBtn, delBtn),
       analysisPanel,
     );
     return {
-      li, input, swatch, num, status, domain, domMinInput, domMaxInput, domVar1, domError,
+      li, input, swatch, num, status, warn, listBox, listSummary, listCount, listMore, listAll, listKey: '', domain, domMinInput, domMaxInput, domVar1, domError,
       table, tStart, tStep, tHeadA, tHeadB, tBody, tableErr, tableBtn,
       missing, missingKey: '', slider, range, sMin, sMax, sStep, playBtn, sliderName: null, pretty, prettyKey: null,
       sweepBtn, ode, odeList, odeAdd, odeHint, odeKey: '',
@@ -426,6 +445,10 @@ export function createExprList({
     e.status.className = `expr-status ${cls}`;
     setHidden(e.status, !text);
     e.li.classList.toggle('has-error', cls === 'is-error');
+    renderList(e, row, r);
+    const warning = r.kind !== 'error' && r.warning ? r.warning : '';
+    setText(e.warn, warning);
+    setHidden(e.warn, !warning);
 
     // Offer sliders for undefined names.
     const names = r.kind === 'error' && !editing && r.error.missing ? r.error.missing : [];
@@ -440,8 +463,9 @@ export function createExprList({
 
     renderSlider(e, row, r, analysis);
 
-    // Domain for polar / parametric rows.
-    const hasDomain = r.kind === 'polar' || r.kind === 'parametric';
+    // Domain for polar / parametric rows (and families of them, Phase 9a).
+    const curveKind = r.kind === 'family' ? r.of : r.kind;
+    const hasDomain = curveKind === 'polar' || curveKind === 'parametric';
     setHidden(e.domain, !hasDomain);
     if (hasDomain) {
       const def = defaultDomain(analysis.angle);
@@ -449,8 +473,9 @@ export function createExprList({
       e.domMaxInput.placeholder = def.maxText;
       syncInput(e.domMinInput, row.domainMin);
       syncInput(e.domMaxInput, row.domainMax);
-      setText(e.domVar1, r.kind === 'polar' ? 'θ' : 't');
-      renderSweepBtn(e, row.id, r.kind);
+      setText(e.domVar1, curveKind === 'polar' ? 'θ' : 't');
+      renderSweepBtn(e, row.id, curveKind);
+      setHidden(e.sweepBtn, r.kind === 'family');
       const de = r.domainError;
       setHidden(e.domError, !de);
       if (de) setText(e.domError, de.message);
@@ -475,6 +500,30 @@ export function createExprList({
     const showAnalysis = analysable && row.showAnalysis;
     setHidden(e.analysisPanel, !showAnalysis);
     if (showAnalysis) renderAnalysis(e, row, r, analysis);
+  }
+
+  // A list's elements under the row (D61): the first 3 and last 2 when there are more than
+  // 6, with "Show all" for every one of them in a scrolling box.
+  function renderList(e, row, r) {
+    const show = r.kind === 'list' && !PLAIN_LIST.test(row.text);
+    setHidden(e.listBox, !show);
+    if (!show) return;
+    const { values } = r;
+    const long = values.length > 6;
+    const open = long && listOpen.has(row.id);
+    setText(e.listSummary, `= ${listText(values)}`);
+    setText(e.listCount, long ? countText(values.length) : '');
+    setHidden(e.listMore.parentNode, !long);
+    setText(e.listMore, open ? 'Hide' : 'Show all');
+    e.listMore.setAttribute('aria-expanded', String(open));
+    setHidden(e.listAll, !open);
+    if (open) {
+      const key = values.join(',');
+      if (key !== e.listKey) {
+        e.listKey = key;
+        setText(e.listAll, values.map((v) => fmt(v, 10)).join(', '));
+      }
+    }
   }
 
   // Maths preview under the row (D38): only when it shows something the typed text

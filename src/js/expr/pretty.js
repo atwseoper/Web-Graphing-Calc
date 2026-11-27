@@ -108,6 +108,20 @@ function lay(node) {
         c: precOf(node.body) <= PREC.add ? paren(body) : body,
       };
     }
+    case 'list': return paren(list(node.items), '[', ']');
+    case 'range': {
+      const parts = [lay(node.first)];
+      if (node.second) parts.push(text(', ', 'punct'), lay(node.second));
+      parts.push(text(', …, ', 'punct'), lay(node.last));
+      return paren(row(parts), '[', ']');
+    }
+    case 'index': {
+      const t = lay(node.target);
+      const inner = node.index.type === 'list' ? list(node.index.items)
+        : node.index.type === 'range' ? lay(node.index).c : lay(node.index);
+      return row(precOf(node.target) < PREC.atom ? paren(t) : t, paren(inner, '[', ']'));
+    }
+    case 'column': return row(symbol(node.set), text(`.${node.col}`, 'var'));
     case 'yprime': return text('y′', 'var');
     case 'nderiv':
       return row({ t: 'frac', n: text('d', 'fn'), d: row(text('d', 'fn'), symbol(node.v)) }, paren(lay(node.expr)));
@@ -154,7 +168,7 @@ function layBin(node) {
     if (left.type === 'call' && !['sqrt', 'cbrt', 'abs', 'floor', 'ceil', 'exp'].includes(left.name) && !FN_NAMES[left.name] && !(left.name === 'log' && left.args.length === 2)) {
       return row({ t: 'sup', b: text(left.name, 'fn'), e: lay(right) }, paren(list(left.args)));
     }
-    const atomic = (left.type === 'num' && left.value >= 0) || left.type === 'sym' || left.type === 'call' || left.type === 'apply' || left.type === 'tuple';
+    const atomic = (left.type === 'num' && left.value >= 0) || ['sym', 'call', 'apply', 'tuple', 'list', 'range', 'index', 'column'].includes(left.type);
     if (!atomic) base = paren(base);
     return { t: 'sup', b: base, e: lay(right) };
   }
@@ -203,7 +217,7 @@ export function prettyLayout(parsed) {
 export function isRich(box) {
   switch (box.t) {
     case 'frac': case 'sup': case 'sqrt': case 'bigop': case 'sub': return true;
-    case 'paren': return box.open !== '(' || isRich(box.c);
+    case 'paren': return (box.open !== '(' && box.open !== '[') || isRich(box.c);
     case 'row': return box.c.some(isRich);
     default: return false;
   }

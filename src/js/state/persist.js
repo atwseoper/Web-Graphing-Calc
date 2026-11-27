@@ -24,11 +24,20 @@ export function serialize(state) {
     rows: state.rows,
     view: state.view,
     settings: state.settings,
-    calc: { history: state.calc.history.slice(-MAX_HISTORY) },
+    calc: { history: state.calc.history.slice(-MAX_HISTORY).map(historyEntry) },
     solve: state.solve,
     data: serializeData(state.data),
     ui: state.ui,
   });
+}
+
+// Long lists from the Calc tab (Phase 9a) keep only their summary text when saved, so
+// a few 10,000-element results can't fill the browser's storage.
+export const MAX_SAVED_LIST = 500;
+function historyEntry(h) {
+  if (!h.list || h.list.length <= MAX_SAVED_LIST) return h;
+  const { list, ...rest } = h;
+  return rest;
 }
 
 // Points are stored as [x, y, σy, off] to keep saved data small.
@@ -108,7 +117,13 @@ export function deserialize(json) {
   const history = Array.isArray(raw.calc && raw.calc.history)
     ? raw.calc.history
       .filter((h) => h && typeof h.input === 'string')
-      .map((h) => ({ input: h.input, output: str(h.output), value: num(h.value), error: bool(h.error) }))
+      .map((h) => {
+        const entry = { input: h.input, output: str(h.output), value: num(h.value), error: bool(h.error) };
+        if (Array.isArray(h.list) && h.list.length <= MAX_SAVED_LIST) entry.list = h.list.map((v) => (typeof v === 'number' ? v : NaN));
+        if (typeof h.note === 'string' && h.note) entry.note = h.note.slice(0, 300);
+        if (Number.isInteger(h.count) && h.count >= 0) entry.count = h.count;
+        return entry;
+      })
       .slice(-MAX_HISTORY)
     : [];
 
@@ -125,6 +140,7 @@ export function deserialize(json) {
       xAxis: oneOf(s.xAxis, AXIS_TYPES, 'linear'),
       yAxis: oneOf(s.yAxis, AXIS_TYPES, 'linear'),
       quartiles: oneOf(s.quartiles, QUARTILE_METHODS, 'ti'),
+      listIndex: oneOf(s.listIndex, ['1', '0'], '1'),
     },
     calc: { history },
     solve: deserializeSolve(raw.solve),

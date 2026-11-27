@@ -86,6 +86,17 @@ function compileNode(node, ctx) {
     case 'nderiv':
       return compileNumericDerivative(node, ctx);
 
+    case 'lookup':
+      return compileLookup(node, ctx);
+
+    case 'list':
+    case 'range':
+    case 'index':
+    case 'column':
+      // Lists are taken apart before compiling (lists.js); one left here is somewhere a
+      // single number is needed.
+      throw new ExprError('A list can’t be used here – this needs a single number', node.start, node.end);
+
     default:
       throw new ExprError(`Unknown expression`, node.start, node.end);
   }
@@ -212,6 +223,20 @@ function compileNumericDerivative(node, ctx) {
     const d2 = (ev(x + h / 2) - ev(x - h / 2)) / h;
     return d2 + (d2 - d1) / 3;
   });
+}
+
+// L[k] where the position isn't fixed (k counts in a sum, or is a sequence's n): the
+// element at that position of a list of numbers, or undefined (Phase 9a).
+function compileLookup(node, ctx) {
+  const { values, base } = node;
+  const idx = compileNode(node.index, ctx);
+  const pick = (i) => {
+    const k = i - base;
+    return Number.isInteger(k) && k >= 0 && k < values.length ? values[k] : NaN;
+  };
+  if (idx.constant) return constant(pick(idx.value));
+  const f = idx.fn;
+  return dynamic((fr) => pick(f(fr)));
 }
 
 function compileSym(node, ctx) {
@@ -353,6 +378,21 @@ export function referencedNames(node, acc = { names: new Set(), calls: new Set()
       referencedNames(node.at || { type: 'sym', name: node.v }, acc);
       break;
     }
+    case 'list':
+      for (const a of node.items) referencedNames(a, acc);
+      break;
+    case 'range':
+      referencedNames(node.first, acc);
+      if (node.second) referencedNames(node.second, acc);
+      referencedNames(node.last, acc);
+      break;
+    case 'index':
+      referencedNames(node.target, acc);
+      referencedNames(node.index, acc);
+      break;
+    case 'lookup':
+      referencedNames(node.index, acc);
+      break;
     default:
       break;
   }

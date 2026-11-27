@@ -21,6 +21,14 @@
 //                 (form 'x': right/left of x = f(y)); or { form: 'general',
 //                 test(x, y) -> boolean, edges: [{ F(x, y), strict }] }
 //   'slope'       dy/dx = f(x, y) or y' = f(x, y): { f(x, y) }, a slope field
+//   'list'        a list of numbers (Phase 9a): { values, name? } – L = [1, 2, 3], [1...10]^2
+//   'points'      several points from lists, (L, M): { xs, ys }
+//   'family'      one curve per element of a list, y = L·x: { of, members: [result…],
+//                 labels: ['L = 1', …], total } where `of` is the kind of every member
+//                 ('cartesian', 'cartesian-x', 'polar', 'parametric') and total is the
+//                 number of curves before the cap of 50 (D61)
+// Any result may carry warning: text shown under the row (lists of different lengths,
+// a position outside a list, curves left out).
 // Polar and parametric rows may also carry domainError: { which: 'min'|'max', message }.
 // Rows with an f of x also have derivative(): { f, text } | null, computed on first use,
 // and body: the expression in x as an AST (for Taylor polynomials, Phase 6b).
@@ -32,6 +40,7 @@ import { derive } from './derive.js';
 import { toText } from './print.js';
 import { isConstantName, isFunctionName } from './builtins.js';
 import { DISCRETE_FUNCTIONS } from '../numerics/distributions.js';
+import { expand, expandParts, MAX_CURVES } from './lists.js';
 
 export const PLOT_VARS = new Set(['x', 'y', 'r', 'θ', 't']);
 
@@ -43,6 +52,12 @@ const HINTS = {
 };
 
 const MAX_DERIVATIVE_TEXT = 140;
+
+// Kinds of graph a list can make a family of (Phase 9a), and those it can't yet.
+const FAMILY_KINDS = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric']);
+const KIND_WORDS = {
+  implicit: 'implicit curves', inequality: 'inequalities', slope: 'slope fields',
+};
 
 function errorOf(e) {
   if (e instanceof ExprError) {
@@ -126,6 +141,7 @@ export function explainUnknown(error, text) {
 
 export function analyse(rows, settings = {}) {
   const angle = settings.angle === 'deg' ? 'deg' : 'rad';
+  const base = settings.listIndex === '0' ? 0 : 1; // list positions count from 1 or 0 (D61)
   const results = rows.map(() => null);
   const parsed = rows.map((row) => {
     const text = (row.text || '').trim();
@@ -217,11 +233,12 @@ export function analyse(rows, settings = {}) {
     return def;
   }
 
+  // A variable's value: a number, or { list: [numbers] } for a list variable (Phase 9a).
   function resolveVariable(name, node) {
     const def = definition(name, 'variable', node);
     if (!def) return undefined;
     return resolve(varCache, name, node, () => {
-      const fn = compile(def.body, makeCtx({
+      const ctx = makeCtx({
         unknown(n, where) {
           if (PLOT_VARS.has(n)) {
             // "R = cos(θ)", "Y = 2x": a capital where the graph letter was meant
@@ -234,18 +251,39 @@ export function analyse(rows, settings = {}) {
             throw new ExprError(`'${name}' can't depend on ${n}. To make a function, write ${name}(${n}) = …`, where.start, where.end);
           }
         },
-      }));
-      return fn([]);
+      });
+      const ex = withWarnings(def.index, () => expandNode(def.body));
+      if (ex.list) {
+        return { list: ex.list.map((item) => (item.type === 'num' ? item.value : compile(item, ctx)([]))) };
+      }
+      return compile(ex.node, ctx)([]);
     });
   }
 
+  // The elements of a list variable, or undefined (not a list, not defined, or an error –
+  // which is reported where the name is compiled).
+  function listValues(name) {
+    try {
+      const v = resolveVariable(name, null);
+      return v && typeof v === 'object' ? v.list : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  // { arity, call, ast } for a function giving a number (ast: its body with any lists used
+  // up), or { arity, listy: true, params, body } for one giving a list, which is inlined
+  // where it is used (Phase 9a).
   function resolveFunction(name, node) {
     const def = definition(name, 'function', node);
     if (!def) return undefined;
     return resolve(fnCache, name, node, () => {
       const slots = {};
       def.params.forEach((p, k) => { slots[p.name] = k; });
-      const body = compile(def.body, makeCtx({
+      const params = def.params.map((p) => p.name);
+      const ex = withWarnings(def.index, () => expandNode(def.body, params));
+      if (ex.list) return { arity: params.length, listy: true, params, body: def.body, members: ex.list, labels: ex.labels };
+      const body = compile(ex.node, makeCtx({
         slots,
         unknown(n, where) {
           // f(x) = x + y: a graph letter that isn't a parameter has no value here.
@@ -255,8 +293,56 @@ export function analyse(rows, settings = {}) {
           }
         },
       }));
-      return { arity: def.params.length, call: (args) => body(args) };
+      return { arity: def.params.length, call: (args) => body(args), ast: ex.node };
     });
+  }
+
+  // For lists.js: a user function, or undefined.
+  function functionInfo(name) {
+    try {
+      return resolveFunction(name, null);
+    } catch {
+      return undefined;
+    }
+  }
+
+  // ---- lists (Phase 9a) ---------------------------------------------------------------------
+  // Warnings from expanding lists go to the row being worked on: a definition's own row
+  // while it is resolved, otherwise the row being classified.
+  const warningsByRow = new Map(); // row index -> Set of messages
+  let warnTo = null;
+  function withWarnings(index, fn) {
+    const saved = warnTo;
+    warnTo = index;
+    try {
+      return fn();
+    } finally {
+      warnTo = saved;
+    }
+  }
+  const listEnv = {
+    angle,
+    base,
+    listVar: listValues,
+    func: functionInfo,
+    constant(node) {
+      return compile(node, makeCtx())([]);
+    },
+    column(set, col, node) {
+      throw new ExprError('Data set columns arrive in Phase 9a-2', node.start, node.end);
+    },
+    warn(message) {
+      if (warnTo === null) return;
+      if (!warningsByRow.has(warnTo)) warningsByRow.set(warnTo, new Set());
+      warningsByRow.get(warnTo).add(message);
+    },
+  };
+  function expandNode(node, locals = []) {
+    return expand(node, listEnv, { locals });
+  }
+  function warningOf(i) {
+    const w = warningsByRow.get(i);
+    return w && w.size ? [...w].join('. ') : undefined;
   }
 
   // User functions as { params, body } for symbolic differentiation (inlining).
@@ -265,7 +351,10 @@ export function analyse(rows, settings = {}) {
     func(name) {
       const def = defs.get(name);
       if (!def || def.kind !== 'function' || def.duplicate) return undefined;
-      return { params: def.params.map((p) => p.name), body: def.body };
+      // The body with any lists used up (mean(L), L[2]); none for a function giving a list.
+      const info = functionInfo(name);
+      if (info && info.listy) return undefined;
+      return { params: def.params.map((p) => p.name), body: info && info.ast ? info.ast : def.body };
     },
   };
 
@@ -295,10 +384,16 @@ export function analyse(rows, settings = {}) {
       used: new Set(),
       variable(name, node) {
         if (extraVars && Object.prototype.hasOwnProperty.call(extraVars, name)) return extraVars[name];
-        return resolveVariable(name, node);
+        const v = resolveVariable(name, node);
+        if (v && typeof v === 'object') {
+          throw new ExprError(`'${name}' is a list – this needs a single number, such as ${name}[1] or mean(${name})`, ...at(node));
+        }
+        return v;
       },
       func(name, node) {
-        return resolveFunction(name, node);
+        const f = resolveFunction(name, node);
+        if (f && f.listy) throw new ExprError(`${name} gives a list – this needs a single number`, ...at(node));
+        return f;
       },
       funcDeriv(name, order, node) {
         return resolveFunctionDerivative(name, order, node);
@@ -341,12 +436,25 @@ export function analyse(rows, settings = {}) {
     try {
       if (def.kind === 'variable') {
         const value = resolveVariable(def.name, null);
-        const b = def.body;
-        const slider = b.type === 'num' || (b.type === 'neg' && b.arg.type === 'num');
-        results[i] = { kind: 'variable', name: def.name, value, slider };
+        if (value && typeof value === 'object') {
+          results[i] = { kind: 'list', name: def.name, values: value.list };
+        } else {
+          const b = def.body;
+          const slider = b.type === 'num' || (b.type === 'neg' && b.arg.type === 'num');
+          results[i] = { kind: 'variable', name: def.name, value, slider };
+        }
       } else {
         const fn = resolveFunction(def.name, null);
         const r = { kind: 'function', name: def.name, params: def.params.map((p) => p.name) };
+        if (fn.listy) {
+          // f(x) = a·x with a list: a family of curves; otherwise just a definition.
+          results[i] = def.params.length === 1 && def.params[0].name === 'x'
+            ? familyOf(fn.members.map((m) => ({ type: 'eq', lhs: { type: 'sym', name: 'y' }, rhs: m })), fn.labels, rows[i], { type: 'eq' })
+            : { ...r, listy: true };
+          const w = warningOf(i);
+          if (w) results[i].warning = w;
+          return;
+        }
         if (def.params.length === 1 && def.params[0].name === 'x') {
           r.f = unary(fn.call);
           r.body = { type: 'apply', name: def.name, args: [{ type: 'sym', name: 'x' }] };
@@ -355,6 +463,8 @@ export function analyse(rows, settings = {}) {
         }
         results[i] = r;
       }
+      const w = warningOf(i);
+      if (w) results[i].warning = w;
     } catch (e) {
       const cache = def.kind === 'variable' ? varCache : fnCache;
       const cached = cache.get(def.name);
@@ -369,7 +479,9 @@ export function analyse(rows, settings = {}) {
     if (p.error) { results[i] = { kind: 'error', error: p.error }; return; }
     if (defsByIndex.has(i)) { defineRow(defsByIndex.get(i)); return; }
     try {
-      results[i] = classify(p.ast, rows[i]);
+      results[i] = withWarnings(i, () => classifyRow(p.ast, rows[i]));
+      const w = warningOf(i);
+      if (w && results[i].kind !== 'error') results[i].warning = results[i].warning || w;
     } catch (e) {
       results[i] = { kind: 'error', error: errorOf(e) };
     }
@@ -512,6 +624,78 @@ export function analyse(rows, settings = {}) {
     return { kind: 'implicit', F };
   }
 
+  // ---- rows with lists (Phase 9a) ------------------------------------------------------------
+  // Expand the lists in a row: either one ordinary row, or one row per element.
+  function classifyRow(ast, row) {
+    let ex;
+    if (ast.type === 'ineq') {
+      ex = expandParts(ast.items, listEnv);
+      if (ex.members) return familyOf(ex.members.map((items) => ({ ...ast, items })), ex.labels, row, ast);
+      return classify(ex.parts === ast.items ? ast : { ...ast, items: ex.parts }, row);
+    }
+    if (ast.type === 'eq') {
+      if (ast.lhs.type === 'yprime' || isDyDx(ast.lhs)) {
+        ex = expandParts([ast.rhs], listEnv);
+        if (ex.members) return familyOf(ex.members.map(([rhs]) => ({ ...ast, rhs })), ex.labels, row, ast);
+        return classify(ex.parts[0] === ast.rhs ? ast : { ...ast, rhs: ex.parts[0] }, row);
+      }
+      ex = expandParts([ast.lhs, ast.rhs], listEnv);
+      if (ex.members) return familyOf(ex.members.map(([lhs, rhs]) => ({ ...ast, lhs, rhs })), ex.labels, row, ast);
+      const [lhs, rhs] = ex.parts;
+      return classify(lhs === ast.lhs && rhs === ast.rhs ? ast : { ...ast, lhs, rhs }, row);
+    }
+    ex = expandParts([ast.expr], listEnv);
+    if (ex.members) return familyOf(ex.members.map(([expr]) => ({ type: 'expr', expr })), ex.labels, row, ast);
+    return classify(ex.parts[0] === ast.expr ? ast : { type: 'expr', expr: ex.parts[0] }, row);
+  }
+
+  // One result for a row whose lists give several members (each an ordinary parsed row).
+  function familyOf(members, labels, row, ast) {
+    const n = members.length;
+    const isExpr = ast.type === 'expr';
+    if (!n) {
+      // An empty list: nothing to draw (or the empty list itself).
+      const mentionsPlot = isExpr && [...referencedNames(ast.expr).names].some((v) => PLOT_VARS.has(v));
+      return isExpr && !mentionsPlot ? { kind: 'list', values: [] } : { kind: 'family', of: 'cartesian', members: [], labels: [], total: 0 };
+    }
+    const num = (m) => m.type === 'num';
+    // Fast paths: lists of numbers and of points, up to 10,000 elements.
+    if (isExpr && members.every((m) => num(m.expr))) return { kind: 'list', values: members.map((m) => m.expr.value) };
+    if (isExpr && members.every((m) => m.expr.type === 'tuple' && m.expr.items.length === 2 && m.expr.items.every(num))) {
+      return { kind: 'points', xs: members.map((m) => m.expr.items[0].value), ys: members.map((m) => m.expr.items[1].value) };
+    }
+    const first = classify(members[0], row);
+    if (first.kind === 'value' || first.kind === 'point') {
+      const all = members.map((m, k) => (k ? classify(m, row) : first));
+      if (all.every((r) => r.kind === 'value')) return { kind: 'list', values: all.map((r) => r.value) };
+      if (all.every((r) => r.kind === 'point')) return { kind: 'points', xs: all.map((r) => r.x), ys: all.map((r) => r.y) };
+    }
+    if (KIND_WORDS[first.kind]) {
+      throw new ExprError(`Lists can't be used in ${KIND_WORDS[first.kind]} yet – only in y = …, x = …, r = …, parametric curves and points`, ast.start ?? -1, ast.end ?? -1);
+    }
+    const shown = Math.min(n, MAX_CURVES);
+    const out = [];
+    let of = null;
+    for (let k = 0; k < shown; k++) {
+      let r = k ? classify(members[k], row) : first;
+      // y = [x, 2]: a number among curves is a horizontal line.
+      if (r.kind === 'value' && isExpr) {
+        const v = r.value;
+        r = { kind: 'cartesian', f: () => v, body: { type: 'num', value: v }, derivative: () => null };
+      }
+      if (r.kind === 'function' && r.f) r = { ...r, kind: 'cartesian' };
+      if (!FAMILY_KINDS.has(r.kind) || (of && r.kind !== of)) {
+        throw new ExprError('Every element of the list must give the same kind of graph', ast.start ?? -1, ast.end ?? -1);
+      }
+      of = r.kind;
+      out.push(r);
+    }
+    const result = { kind: 'family', of, members: out, labels: labels.slice(0, shown), total: n };
+    if (out[0].domainError) result.domainError = out[0].domainError;
+    if (n > shown) listEnv.warn(`Showing the first ${MAX_CURVES} of ${n.toLocaleString('en')} curves`);
+    return result;
+  }
+
   function classify(ast, row) {
     if (ast.type === 'ineq') return classifyInequality(ast);
     if (ast.type === 'eq' && (ast.lhs.type === 'yprime' || isDyDx(ast.lhs))) {
@@ -612,7 +796,12 @@ export function analyse(rows, settings = {}) {
 
   // Evaluate a constant expression using the user's definitions.
   // extraVars, e.g. { Ans: 3 }, are extra named values.
-  function evaluate(text, extraVars) {
+  // With { allowList: true } a list gives { list: [numbers], warning? } (the Calc tab);
+  // elsewhere a list is an error, since a single number is needed.
+  function evaluate(text, extraVars, { allowList = false } = {}) {
+    const warnings = new Set();
+    const savedWarn = listEnv.warn;
+    listEnv.warn = (m) => warnings.add(m);
     try {
       const ast = parseExpression(text);
       if (ast.type === 'tuple') throw new ExprError('Expected a single number', ast.start, ast.end);
@@ -622,9 +811,17 @@ export function analyse(rows, settings = {}) {
           if (n === 'x' || n === 'y') throw new ExprError(`${n} has no value here`, where.start, where.end);
         },
       });
-      return { value: compile(ast, ctx)([]) };
+      const ex = withWarnings(null, () => expand(ast, listEnv));
+      const warning = warnings.size ? [...warnings].join('. ') : undefined;
+      if (ex.list) {
+        if (!allowList) throw new ExprError('This gives a list – a single number is needed here', 0, text.length);
+        return { list: ex.list.map((item) => (item.type === 'num' ? item.value : compile(item, ctx)([]))), warning };
+      }
+      return { value: compile(ex.node, ctx)([]), warning };
     } catch (e) {
       return { error: explainUnknown(errorOf(e), text) };
+    } finally {
+      listEnv.warn = savedWarn;
     }
   }
 
@@ -649,7 +846,9 @@ export function analyse(rows, settings = {}) {
   function compileIn(node, slotNames = [], extraVars) {
     const slots = {};
     slotNames.forEach((n, k) => { slots[n] = k; });
-    return compile(node, makeCtx({ slots, extraVars }));
+    const ex = expandNode(node, slotNames);
+    if (ex.list) throw new ExprError('A list can’t be used here – this needs a single number', node.start ?? -1, node.end ?? -1);
+    return compile(ex.node, makeCtx({ slots, extraVars }));
   }
 
   // d node / d v as an AST (user functions inlined).

@@ -25,7 +25,7 @@ export function legendEntries(state, analysis, fits) {
   state.rows.forEach((row, i) => {
     const r = analysis.rows[i];
     if (row.hidden || !isPlottable(r) || !row.text.trim()) return;
-    out.push({ color: row.color, text: nice(row.text.trim()), kind: r.kind === 'point' ? 'dot' : 'line' });
+    out.push({ color: row.color, text: nice(row.text.trim()), kind: r.kind === 'point' || r.kind === 'points' ? 'dot' : 'line' });
   });
   for (const set of state.data.sets) {
     if (set.hidden) continue;

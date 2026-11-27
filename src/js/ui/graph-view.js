@@ -5,6 +5,8 @@
 // get handles that can be dragged (Phase 6a, through the pointDrag controller).
 // Either axis can be logarithmic (Phase 7a): the viewport maps through log10 there, and
 // everything drawn goes through toScreen, so values ≤ 0 on a log axis aren't drawn.
+// A row with a list draws a family of curves in shades of its colour, or a set of points
+// (Phase 9a); each curve can be traced, and is labelled with its list element.
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, homeViewport, resizeViewport,
   screenX, screenY, axisX, axisY, fromAxisX, axisRange, pxPerUnitX, pxPerUnitY, slopeInAxes, setAxes, axisFit,
@@ -26,7 +28,7 @@ import { contour, regionRects, snapToCurve } from '../plot/implicit.js';
 import { solutionThrough } from '../numerics/ode.js';
 import { riemannOf, taylorOf, secantOf } from '../expr/calculus.js';
 
-const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope']);
+const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope', 'family', 'points']);
 const REGION_ALPHA = 0.16;
 const SLOPE_SPACING = 30; // px between slope-field marks
 const FILL_EDGE = 10; // px beyond the canvas edge that fills reach
@@ -36,6 +38,30 @@ const DOUBLE_TAP_MS = 320;
 const POI_NAMES = {
   root: 'Root', max: 'Maximum', min: 'Minimum', 'y-intercept': 'y-intercept', intersection: 'Intersection',
 };
+
+// Shades of a row's colour for the curves of a family (Phase 9a): from a little darker
+// than the colour for the first element to a little lighter for the last.
+export function familyShade(hex, k, n) {
+  if (n <= 1 || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(...c);
+  const min = Math.min(...c);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let hue = 0;
+  let sat = 0;
+  if (d > 0) {
+    sat = d / (1 - Math.abs(2 * l - 1));
+    if (max === c[0]) hue = ((c[1] - c[2]) / d) % 6;
+    else if (max === c[1]) hue = (c[2] - c[0]) / d + 2;
+    else hue = (c[0] - c[1]) / d + 4;
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+  const t = k / (n - 1) - 0.5;
+  const light = Math.min(0.82, Math.max(0.2, l + t * 0.4));
+  return `hsl(${hue.toFixed(1)}, ${(sat * 100).toFixed(1)}%, ${(light * 100).toFixed(1)}%)`;
+}
 
 export function isPlottable(result) {
   return !!result && PLOTTABLE.has(result.kind) && (result.kind !== 'function' || !!result.f) && !result.domainError;
@@ -225,6 +251,14 @@ export function createGraphView({
     const handles = [];
     for (const { row, r } of visible) {
       if (r.kind === 'inequality' || r.kind === 'slope') continue;
+      if (r.kind === 'family') {
+        drawFamily(row, r, angleFactor);
+        continue;
+      }
+      if (r.kind === 'points') {
+        drawListPoints(row, r);
+        continue;
+      }
       const lines = sampleRow(r, angleFactor);
       curves.push({ rowId: row.id, kind: r.kind, color: row.color, lines, result: r });
       if (r.kind === 'point') {
@@ -260,6 +294,36 @@ export function createGraphView({
     }
     drawTrace(analysis);
     drawSelectedPoi();
+  }
+
+  // ---- lists (Phase 9a) ---------------------------------------------------------------------
+  // One curve per element, each traceable on its own (rowId "id#k") and labelled with its
+  // element (a = 2).
+  function drawFamily(row, r, angleFactor) {
+    const n = r.members.length;
+    r.members.forEach((m, k) => {
+      const color = familyShade(row.color, k, n);
+      const lines = sampleRow(m, angleFactor);
+      curves.push({ rowId: `${row.id}#${k}`, kind: m.kind, color, lines, result: m, label: r.labels[k] });
+      if (m.discrete) drawStems(lines, color);
+      else drawLines(ctx, lines, color);
+    });
+  }
+
+  // (L, M): points from two lists, drawn and traced like a data set's.
+  function drawListPoints(row, r) {
+    const pts = { x: [], y: [], i: [] };
+    for (let k = 0; k < r.xs.length; k++) {
+      if (!Number.isFinite(r.xs[k]) || !Number.isFinite(r.ys[k])) continue;
+      const [sx, sy] = toScreen(vp, r.xs[k], r.ys[k]);
+      if (!Number.isFinite(sx) || !Number.isFinite(sy)) continue;
+      pts.x.push(sx);
+      pts.y.push(sy);
+      pts.i.push(k);
+    }
+    const n = pts.x.length;
+    drawScatter(ctx, pts.x, pts.y, row.color, { radius: n > 5000 ? 2.5 : n > 500 ? 3.25 : 4 });
+    curves.push({ rowId: row.id, kind: 'scatter', color: row.color, lines: [], points: pts, result: r });
   }
 
   // ---- discrete distributions (Phase 7b) -----------------------------------------------
@@ -974,7 +1038,8 @@ export function createGraphView({
     if (!pos) return;
     const [sx, sy] = toScreen(vp, pos.x, pos.y);
     if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
-    drawMarker(ctx, sx, sy, c.color, pos.label, colors, vp.width, vp.height);
+    const label = c.label ? `${c.label}: ${pos.label}` : pos.label;
+    drawMarker(ctx, sx, sy, c.color, label, colors, vp.width, vp.height);
   }
 
   function tracePosition(r, tr, angle) {
@@ -1020,6 +1085,11 @@ export function createGraphView({
         const m = r.marks[tr.i];
         if (!m) return null;
         return { x: m[1], y: toWorld(vp, 0, r.mid)[1], label: `${m[0]}: ${formatNumber(m[1], 8)}` };
+      }
+      case 'points': {
+        const x = r.xs[tr.i];
+        const y = r.ys[tr.i];
+        return Number.isFinite(x) && Number.isFinite(y) ? { x, y, label: `(${formatNumber(x, 8)}, ${formatNumber(y, 8)})` } : null;
       }
       case 'scatter': {
         const p = r.set.points[tr.i];
@@ -1307,7 +1377,22 @@ export function createGraphView({
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
       if (row.hidden || !isPlottable(r)) return;
+      if (r.kind === 'family') r.members.forEach(addResult);
+      else addResult(r);
+    });
+    function addResult(r) {
       if (r.kind === 'inequality' || r.kind === 'slope') return; // they fill the plane
+      if (r.kind === 'points') {
+        only1D = false;
+        round = true;
+        r.xs.forEach((x, k) => {
+          if (Number.isFinite(x) && Number.isFinite(r.ys[k])) {
+            xs.push(x);
+            ys.push(r.ys[k]);
+          }
+        });
+        return;
+      }
       if (r.kind === 'implicit') {
         // What can be seen of it now (an implicit curve has no natural range).
         only1D = false;
@@ -1358,7 +1443,7 @@ export function createGraphView({
           }
         }
       }
-    });
+    }
     // Data sets count in full (their extremes aren't outliers to trim, unlike the odd
     // spike in a sampled curve).
     const data = dataBounds(state.data ? state.data.sets : [], { positiveX: vp.logX, positiveY: vp.logY });

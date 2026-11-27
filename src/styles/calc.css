@@ -60,6 +60,30 @@
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* Lists (Phase 9a): a warning, "Show all" and the whole list. */
+.calc-note {
+  margin: 2px 4px 0;
+  font-size: 0.82rem;
+  text-align: right;
+  color: #b35c00;
+}
+@media (prefers-color-scheme: dark) {
+  .calc-note { color: #ffa94d; }
+}
+.calc-list-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.calc-count { font-size: 0.85rem; color: var(--text-muted); }
+.calc-item .calc-more {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.calc-list-all { margin: 6px 4px 0; }
 .calc-item.is-error .calc-result {
   font-family: var(--font);
   font-size: 0.85rem;
