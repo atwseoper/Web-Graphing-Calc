@@ -175,6 +175,12 @@ document.addEventListener('keydown', (e) => {
 }, true);
 
 // ---- share, save and open -------------------------------------------------------------------
+// Said when an opened project's list positions were converted to this device's setting (D61).
+function shiftedNote(r) {
+  if (!r.shifted) return '';
+  return ` · list positions now count from ${store.get().settings.listIndex === '0' ? '0' : '1'}`;
+}
+
 function applyOpened(next, message) {
   undoHistory.seal();
   store.update(() => next);
@@ -184,7 +190,7 @@ function applyOpened(next, message) {
 }
 
 const shareMenu = createShareMenu({
-  popover: $('share-menu'), toggleBtn: $('btn-share'), store, graph, getAnalysis, getFits, onOpen: applyOpened,
+  popover: $('share-menu'), toggleBtn: $('btn-share'), store, graph, getAnalysis, getFits, onOpen: applyOpened, shiftedNote,
 });
 
 // A shared link asks before it replaces anything (D47): the project is decoded and
@@ -217,7 +223,7 @@ async function openFromHash() {
   if (await shareConfirm.ask(projectSummary(checked.state)) !== 'open') return;
   // Merge with the work as it is now (it may have changed while the dialog was open).
   const r = openProject(store.get(), json);
-  if (r.state) applyOpened(r.state, 'Opened a shared graph');
+  if (r.state) applyOpened(r.state, `Opened a shared graph${shiftedNote(r)}`);
 }
 window.addEventListener('hashchange', openFromHash);
 setUpInstall();

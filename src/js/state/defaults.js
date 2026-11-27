@@ -76,6 +76,8 @@ export function defaultState() {
     view: null, // null = home view for the current screen size
     settings: {
       angle: 'rad', grid: 'cartesian', keypad: 'auto', pretty: 'on', xAxis: 'linear', yAxis: 'linear', quartiles: 'ti',
+      // List positions count from 1 or 0 (D61): the device's setting, like the keypad.
+      listIndex: '1',
     },
     calc: { history: [] },
     solve: defaultSolve(),

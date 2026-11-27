@@ -88,6 +88,39 @@
 .expr-status.is-error::before {
   content: "⚠ ";
 }
+/* Warnings from lists (Phase 9a): something was left out or is undefined. */
+.expr-status.is-warning {
+  margin-top: 0;
+  color: #b35c00;
+}
+.expr-status.is-warning::before { content: "⚠ "; }
+@media (prefers-color-scheme: dark) {
+  .expr-status.is-warning { color: #ffa94d; }
+}
+
+/* A list's elements under its row (Phase 9a). */
+.expr-list-value { margin: -8px 4px 4px; }
+.expr-list-value .list-more-row { justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.list-summary {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--text);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.list-all {
+  max-height: 10em;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 
 .row-actions {
   display: flex;

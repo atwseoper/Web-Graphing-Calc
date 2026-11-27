@@ -18,7 +18,9 @@ function downloadBlob(fileName, blob) {
 
 const stamp = () => new Date().toISOString().slice(0, 10);
 
-export function createShareMenu({ popover, toggleBtn, store, graph, getAnalysis, getFits, onOpen }) {
+export function createShareMenu({
+  popover, toggleBtn, store, graph, getAnalysis, getFits, onOpen, shiftedNote = null,
+}) {
   const status = h('p', { class: 'menu-status', 'aria-live': 'polite' });
   const say = (text, isError = false) => {
     setText(status, text);
@@ -115,7 +117,7 @@ export function createShareMenu({ popover, toggleBtn, store, graph, getAnalysis,
         open();
         return;
       }
-      onOpen(r.state, `Opened ${file.name}`);
+      onOpen(r.state, `Opened ${file.name}${shiftedNote ? shiftedNote(r) : ''}`);
       close();
     };
     reader.onerror = () => say('Couldn’t read that file.', true);

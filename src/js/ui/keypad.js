@@ -33,7 +33,8 @@ const PAGES = {
     ['{', '{|}', { aria: 'open brace' }], ['}', '}', { action: 'close', aria: 'close brace' }], [':', ': ', { aria: 'colon, then' }], ['x', 'x', { cls: 'var' }],
     ['<', ' < ', { aria: 'less than' }], ['>', ' > ', { aria: 'greater than' }], ['≤', ' ≤ ', { aria: 'less than or equal' }], ['≥', ' ≥ ', { aria: 'greater than or equal' }],
     ["f′", "'", { aria: 'derivative, prime' }], ['⌊x⌋', 'floor(|)', { aria: 'floor' }], ['⌈x⌉', 'ceil(|)', { aria: 'ceiling' }], ['round', 'round(|)'],
-    ['sign', 'sign(|)'], ['Γ', 'gamma(|)', { aria: 'gamma' }], ['nPr', 'nPr(|)', { aria: 'permutations' }], ['Ans', 'Ans', { aria: 'last answer' }],
+    // Lists (Phase 9a); sign, gamma and nPr, which were here, are typed.
+    ['[', '[|]', { aria: 'open list bracket' }], [']', ']', { action: 'close', aria: 'close list bracket' }], ['…', '...', { aria: 'range dots' }], ['Ans', 'Ans', { aria: 'last answer' }],
   ],
   abc: [
     ['a', 'a'], ['b', 'b'], ['c', 'c'], ['d', 'd'],
@@ -153,7 +154,7 @@ export function createKeypad({ el, getTarget, onSystemKeyboard, onHide }) {
         target.dispatchEvent(new CustomEvent('keypad-enter'));
         return;
       case 'close': {
-        // Step over an existing ')' or '}' instead of adding another.
+        // Step over an existing ')', '}' or ']' instead of adding another.
         const ch = btn.dataset.insert;
         if (s === e && v[s] === ch) {
           target.setSelectionRange(s + 1, s + 1);

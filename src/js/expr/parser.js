@@ -17,6 +17,11 @@
 //   { type: 'cmp', ops: ['<', '<='...], items } chained comparison, only inside { }
 //   { type: 'series', op: 'sum'|'prod', body, index, from, to }
 //                                              sum(k^2, k, 1, 10)
+//   { type: 'list', items }                    [1, 2, 3] (Phase 9a)
+//   { type: 'range', first, second, last }     [1...10], [0, 0.5...5] (second may be null)
+//   { type: 'index', target, index }           L[2]; index may be a list or range: L[2...4]
+//                                              (sum(L) and prod(L), with one argument, are
+//                                              'call' nodes: the total of a list)
 //
 // parse() returns { type: 'eq', lhs, rhs } or { type: 'expr', expr }; with
 // { graph: true } also { type: 'ineq', ops, items } for y < x^2 (chains allowed:
@@ -37,10 +42,14 @@ import { ExprError } from './errors.js';
 import { tokenize } from './tokenizer.js';
 import { isFunctionName, INVERSE_OF, SERIES } from './builtins.js';
 
-const BP = { add: 10, mul: 20, neg: 30, pow: 40, fact: 50 };
+const BP = { add: 10, mul: 20, neg: 30, pow: 40, fact: 50, index: 60 };
 const COMPARISONS = new Set(['<', '>', '<=', '>=']);
-const STOPPERS = new Set([')', ',', '=', '}', ':']);
+const STOPPERS = new Set([')', ',', '=', '}', ':', ']', '...']);
 const isCallable = (name) => isFunctionName(name) || SERIES.has(name);
+// What a [ … ] straight after it indexes (L[2]); after anything else, such as a number,
+// brackets multiply: 2[1, 2] = 2·[1, 2].
+const INDEXABLE = new Set(['sym', 'list', 'range', 'index', 'apply', 'column']);
+const canIndex = (node) => INDEXABLE.has(node.type) || !!node.parens;
 
 export function parse(src, { graph = false } = {}) {
   const p = new Parser(tokenize(src));
@@ -134,7 +143,7 @@ class Parser {
     if (this.isOp(v)) return this.next();
     const t = this.peek();
     if (t.type === 'eof') {
-      throw new ExprError(v === ')' ? "Missing ')'" : `Expected '${v}'`, openTok ? openTok.start : t.start, t.end);
+      throw new ExprError(v === ')' || v === ']' || v === '}' ? `Missing '${v}'` : `Expected '${v}'`, openTok ? openTok.start : t.start, t.end);
     }
     throw new ExprError(`Expected '${v}' but found ${describe(t)}`, t.start, t.end);
   }
@@ -143,13 +152,15 @@ class Parser {
     if (t.type === 'eof') return;
     if (t.type === 'op' && t.value === ')') throw new ExprError("Unmatched ')'", t.start, t.end);
     if (t.type === 'op' && t.value === '}') throw new ExprError("Unmatched '}'", t.start, t.end);
+    if (t.type === 'op' && t.value === ']') throw new ExprError("Unmatched ']'", t.start, t.end);
+    if (t.type === 'op' && t.value === '...') throw new ExprError("'...' only goes inside a list, e.g. [1...10]", t.start, t.end);
     throw new ExprError(`Unexpected ${describe(t)}`, t.start, t.end);
   }
 
   // Can this token start an operand that follows another operand directly
   // (implicit multiplication)? Numbers cannot: "x2" and "2 3" are errors.
   startsImplicitOperand(t) {
-    return t.type === 'name' || (t.type === 'op' && (t.value === '(' || t.value === '{'));
+    return t.type === 'name' || (t.type === 'op' && (t.value === '(' || t.value === '{' || t.value === '['));
   }
 
   expr(minBp) {
@@ -179,6 +190,16 @@ class Parser {
         if (op === '!' && BP.fact > minBp) {
           this.next();
           left = { type: 'fact', arg: left, start: left.start, end: t.end };
+          continue;
+        }
+        if (op === '[' && BP.index > minBp && canIndex(left)) {
+          this.next();
+          const body = this.nested(() => this.bracket(t));
+          if (body.type === 'list' && !body.items.length) {
+            throw new ExprError('Write the position inside the brackets, e.g. L[1]', body.start, body.end);
+          }
+          const index = body.type === 'list' && body.items.length === 1 ? body.items[0] : body;
+          left = { type: 'index', target: left, index, start: left.start, end: body.end };
           continue;
         }
         if (COMPARISONS.has(op)) {
@@ -221,7 +242,10 @@ class Parser {
       if (t.value === '+') return this.operand(BP.neg, t);
       if (t.value === '(') return this.nested(() => this.parenthesised(t));
       if (t.value === '{') return this.nested(() => this.piecewise(t));
+      if (t.value === '[') return this.nested(() => this.bracket(t));
       if (t.value === ')') throw new ExprError("Unexpected ')'", t.start, t.end);
+      if (t.value === ']') throw new ExprError("Unexpected ']'", t.start, t.end);
+      if (t.value === '...') throw new ExprError("'...' goes between two values inside a list, e.g. [1...10]", t.start, t.end);
       if (t.value === "'") throw new ExprError("A ' (derivative) goes after a function name, e.g. f'(x)", t.start, t.end);
       throw new ExprError(`Unexpected '${t.value}'`, t.start, t.end);
     }
@@ -284,6 +308,40 @@ class Parser {
     return { ...first, start: open.start, end: close.end, parens: true };
   }
 
+  // [a, b, c], [a...b] or [a, b...c] after '[' has been consumed: a list or a range.
+  bracket(open) {
+    if (this.isOp(']')) {
+      const close = this.next();
+      return { type: 'list', items: [], start: open.start, end: close.end };
+    }
+    const items = [this.expr(0)];
+    while (this.isOp(',')) {
+      const comma = this.next();
+      if (this.isOp(']') || this.peek().type === 'eof') {
+        throw new ExprError("Expected a value after ','", comma.start, comma.end);
+      }
+      items.push(this.expr(0));
+    }
+    if (this.isOp('...')) {
+      const dots = this.next();
+      if (items.length > 2) {
+        throw new ExprError('A range is written [first...last] or [first, second...last]', open.start, dots.end);
+      }
+      if (this.isOp(']') || this.peek().type === 'eof') {
+        throw new ExprError("Expected the last value after '...', e.g. [1...10]", dots.start, dots.end);
+      }
+      const last = this.expr(0);
+      if (this.isOp(',') || this.isOp('...')) {
+        const t = this.peek();
+        throw new ExprError('A range ends at its last value: [first...last] or [first, second...last]', t.start, t.end);
+      }
+      const close = this.expectOp(']', open);
+      return { type: 'range', first: items[0], second: items[1] || null, last, start: open.start, end: close.end, dotsStart: dots.start };
+    }
+    const close = this.expectOp(']', open);
+    return { type: 'list', items, start: open.start, end: close.end };
+  }
+
   // { cond: value, cond: value, otherwise } after '{' has been consumed.
   piecewise(open) {
     if (this.isOp('}')) {
@@ -342,8 +400,12 @@ class Parser {
     const open = this.next();
     const args = this.argList(open);
     const end = this.tokens[this.pos - 1].end;
+    // sum(L), prod(L): the total (or product) of a list (Phase 9a, Q17).
+    if (args.length === 1) {
+      return { type: 'call', name: label, args, nameStart: nameTok.start, nameEnd: nameTok.end, start: nameTok.start, end };
+    }
     if (args.length !== 4) {
-      throw new ExprError(`${label} takes 4 arguments: ${label}(expression, k, from, to)`, nameTok.start, end);
+      throw new ExprError(`${label} takes a list, ${label}(L), or 4 arguments: ${label}(expression, k, from, to)`, nameTok.start, end);
     }
     const [body, index, from, to] = args;
     if (index.type !== 'sym' || index.parens) {
@@ -396,7 +458,7 @@ class Parser {
       end = this.tokens[this.pos - 1].end;
     } else {
       const t = this.peek();
-      if (t.type === 'eof' || (t.type === 'op' && !['(', '-', '+', '{'].includes(t.value))) {
+      if (t.type === 'eof' || (t.type === 'op' && !['(', '-', '+', '{', '['].includes(t.value))) {
         throw new ExprError(`${nameTok.value} needs an argument, e.g. ${nameTok.value}(x)`, nameTok.start, nameTok.end);
       }
       // Argument without brackets: a product of non-function factors.

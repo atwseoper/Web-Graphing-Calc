@@ -1,7 +1,8 @@
 // Turns expression text into tokens.
 //
 // Token types: 'num', 'name', 'op', 'eof'. Operators: + - * / ^ ( ) , = ! and, for
-// conditions and derivatives, { } : < > <= >= and ' (prime).
+// conditions and derivatives, { } : < > <= >= and ' (prime); for lists (Phase 9a)
+// [ ] and ... (also typed …).
 // Naming rules (documented in docs/DESIGN.md):
 //  - Known multi-letter words (function names, pi, theta, ans) are recognised
 //    case-insensitively, longest match first: "sinx" -> sin x, "pix" -> π x.
@@ -11,7 +12,7 @@
 import { ExprError } from './errors.js';
 import { WORDS } from './builtins.js';
 
-const SINGLE_OPS = new Set(['+', '-', '*', '/', '^', '(', ')', ',', '=', '!', '{', '}', ':', '<', '>', "'"]);
+const SINGLE_OPS = new Set(['+', '-', '*', '/', '^', '(', ')', ',', '=', '!', '{', '}', ':', '<', '>', "'", '[', ']']);
 const UNICODE_OPS = {
   '×': '*', '·': '*', '⋅': '*', '∙': '*', '÷': '/', '−': '-', '–': '-', '—': '-',
   '≤': '<=', '≥': '>=', '′': "'", '’': "'",
@@ -43,11 +44,21 @@ export function tokenize(src) {
       continue;
     }
 
-    // Numbers: 12, 1.5, .5, 1e-3 (exponent only when digits follow the e)
+    // Ranges [1...10]: three dots (or the ellipsis character).
+    if (c === '…' || (c === '.' && src[i + 1] === '.' && src[i + 2] === '.')) {
+      const n = c === '…' ? 1 : 3;
+      push('op', '...', i, i + n);
+      i += n;
+      continue;
+    }
+    if (c === '.' && src[i + 1] === '.') throw new ExprError('A range needs three dots, e.g. [1...10]', i, i + 2);
+
+    // Numbers: 12, 1.5, .5, 1e-3 (exponent only when digits follow the e). A dot
+    // followed by another dot starts a range (1...10), not a decimal point.
     if (isDigit(c) || (c === '.' && isDigit(src[i + 1] ?? ''))) {
       const start = i;
       while (isDigit(src[i] ?? '')) i++;
-      if (src[i] === '.') {
+      if (src[i] === '.' && src[i + 1] !== '.') {
         i++;
         while (isDigit(src[i] ?? '')) i++;
       }
@@ -59,7 +70,7 @@ export function tokenize(src) {
           while (isDigit(src[i] ?? '')) i++;
         }
       }
-      if (src[i] === '.') throw new ExprError('A number can only have one decimal point', i, i + 1);
+      if (src[i] === '.' && src[i + 1] !== '.') throw new ExprError('A number can only have one decimal point', i, i + 1);
       push('num', Number(src.slice(start, i)), start, i);
       continue;
     }

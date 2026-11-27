@@ -9,6 +9,7 @@
 import { serialize, deserialize } from './persist.js';
 import { parse, isDyDx } from '../expr/parser.js';
 import { referencedNames } from '../expr/compile.js';
+import { shiftPositions } from '../expr/lists.js';
 
 export const SHARE_PARAM = 'g';
 export const MAX_LINK_CHARS = 8000; // longer links are unreliable in chat apps and some browsers
@@ -19,12 +20,64 @@ function projectObject(state) {
   const o = JSON.parse(serialize(state));
   delete o.calc; // the Calc history is personal scratch work
   const {
-    angle, grid, xAxis, yAxis, quartiles,
+    angle, grid, xAxis, yAxis, quartiles, listIndex,
   } = o.settings;
+  // listIndex is the creator's device setting (D61): it isn't applied on opening, but tells
+  // the opener's device how to read the list positions in the project.
   o.settings = {
-    angle, grid, xAxis, yAxis, quartiles,
+    angle, grid, xAxis, yAxis, quartiles, listIndex,
   };
   return o;
+}
+
+// ---- list positions (D61) -------------------------------------------------------------------
+// The text fields of a project that can hold expressions.
+const ROW_FIELDS = ['text', 'domainMin', 'domainMax', 'sliderMin', 'sliderMax', 'sliderStep', 'atX', 'intFrom', 'intTo',
+  'tableStart', 'tableStep', 'riemannN', 'taylorN', 'taylorAt', 'secantH'];
+
+// Shift every list position in a project by delta (+1: it was made counting from 0 and
+// is opened counting from 1). Returns { state, count } with the number of fields changed.
+export function shiftProjectPositions(state, delta) {
+  let count = 0;
+  const parseAny = (t) => parse(t, { graph: true });
+  const fix = (t) => {
+    if (typeof t !== 'string') return t;
+    const r = shiftPositions(t, delta, parseAny);
+    if (r.changed) count++;
+    return r.text;
+  };
+  const rows = state.rows.map((row) => {
+    const out = { ...row };
+    for (const f of ROW_FIELDS) out[f] = fix(row[f]);
+    return out;
+  });
+  const sv = state.solve;
+  const solve = {
+    ...sv,
+    equation: fix(sv.equation),
+    from: fix(sv.from),
+    to: fix(sv.to),
+    polynomial: fix(sv.polynomial),
+    system: sv.system.map(fix),
+    given: Object.fromEntries(Object.entries(sv.given).map(([k, v]) => [k, fix(v)])),
+  };
+  const data = {
+    ...state.data,
+    sets: state.data.sets.map((set) => ({
+      ...set,
+      fits: set.fits.map((fit) => ({
+        ...fit,
+        custom: fix(fit.custom),
+        start: Object.fromEntries(Object.entries(fit.start).map(([k, v]) => [k, fix(v)])),
+      })),
+    })),
+  };
+  return {
+    state: {
+      ...state, rows, solve, data,
+    },
+    count,
+  };
 }
 
 export function projectJson(state, { pretty = false } = {}) {
@@ -33,8 +86,9 @@ export function projectJson(state, { pretty = false } = {}) {
 }
 
 // Combine an opened project with the current state: everything comes from the project
-// except the user's own preferences (keypad) and their Calc history.
-// Returns { state } or { error }.
+// except the user's own preferences (keypad, list positions) and their Calc history. A
+// project made counting list positions the other way has its positions converted (D61).
+// Returns { state, shifted } (shifted: how many fields had positions converted) or { error }.
 export function openProject(current, json) {
   let raw;
   try {
@@ -52,8 +106,16 @@ export function openProject(current, json) {
         : 'This project was saved in a format this version can’t read.',
     };
   }
-  const p = deserialize(json);
+  let p = deserialize(json);
+  let shifted = 0;
+  const mine = current.settings.listIndex === '0' ? '0' : '1';
+  if (p.settings.listIndex !== mine) {
+    const r = shiftProjectPositions(p, mine === '1' ? 1 : -1);
+    p = r.state;
+    shifted = r.count;
+  }
   return {
+    shifted,
     state: {
       ...p,
       nextId: Math.max(p.nextId, current.nextId),

@@ -60,6 +60,14 @@ export function toText(node) {
       return `${node.op}(${toText(node.body)}, ${node.index}, ${toText(node.from)}, ${toText(node.to)})`;
     case 'nderiv':
       return `(d/d${node.v})(${toText(node.expr)})`;
+    case 'list': return `[${node.items.map(toText).join(', ')}]`;
+    case 'range': return `[${toText(node.first)}${node.second ? `, ${toText(node.second)}` : ''}...${toText(node.last)}]`;
+    case 'index': {
+      const t = toText(node.target);
+      const inner = node.index.type === 'list' || node.index.type === 'range' ? toText(node.index).slice(1, -1) : toText(node.index);
+      return `${precOf(node.target) < PREC.atom ? wrap(t) : t}[${inner}]`;
+    }
+    case 'column': return `${node.set}.${node.col}`;
     default:
       return '?';
   }
