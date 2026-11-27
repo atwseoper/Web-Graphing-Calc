@@ -19,6 +19,9 @@ export function newRow(id, color, text = '') {
     // secant through x and x + h.
     riemann: '', riemannN: '', taylor: false, taylorN: '', taylorAt: '', secant: false, secantH: '',
     odePoints: [], // [[x, y], …]: starting points of solution curves (slope fields)
+    // Sequences (Phase 9b): "Plot as sequence" (points at whole numbers) for y = f(x) and
+    // u(n) = … rows, and a cobweb diagram of n steps for first-order recurrences.
+    sequence: false, cobweb: false, cobwebN: '',
   };
 }
 

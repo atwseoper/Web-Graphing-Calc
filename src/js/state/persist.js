@@ -92,6 +92,9 @@ export function deserialize(json) {
       row.taylorAt = str(r.taylorAt);
       row.secant = bool(r.secant);
       row.secantH = str(r.secantH);
+      row.sequence = bool(r.sequence);
+      row.cobweb = bool(r.cobweb);
+      row.cobwebN = str(r.cobwebN);
       if (Array.isArray(r.odePoints)) {
         row.odePoints = r.odePoints
           .filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null)

@@ -23,12 +23,19 @@
 //   'slope'       dy/dx = f(x, y) or y' = f(x, y): { f(x, y) }, a slope field
 //   'list'        a list of numbers (Phase 9a): { values, name? } – L = [1, 2, 3], [1...10]^2
 //   'points'      several points from lists, (L, M): { xs, ys }
+//   'sequence'    a recursive sequence (Phase 9b), u(n) = r·u(n − 1)(1 − u(n − 1)) with
+//                 starting values such as u(0) = 0.2: { name, param, f, lowest,
+//                 cobweb? }, drawn as points (n, u(n)) for whole n ≥ lowest. cobweb:
+//                 { g, u0 } for first-order recurrences u(n) = g(u(n − 1)).
+//   'start'       a starting value of a sequence, u(0) = 0.2: { name, at, value }
 //   'family'      one curve per element of a list, y = L·x: { of, members: [result…],
 //                 labels: ['L = 1', …], total } where `of` is the kind of every member
 //                 ('cartesian', 'cartesian-x', 'polar', 'parametric') and total is the
 //                 number of curves before the cap of 50 (D61)
 // Any result may carry warning: text shown under the row (lists of different lengths,
-// a position outside a list, curves left out).
+// a position outside a list, curves left out). Rows with "Plot as sequence" switched on
+// (row.sequence), and every 'sequence', carry asSequence: true and are drawn as points at
+// whole numbers (Phase 9b).
 // Polar and parametric rows may also carry domainError: { which: 'min'|'max', message }.
 // Rows with an f of x also have derivative(): { f, text } | null, computed on first use,
 // and body: the expression in x as an AST (for Taylor polynomials, Phase 6b).
@@ -53,6 +60,9 @@ const HINTS = {
 };
 
 const MAX_DERIVATIVE_TEXT = 140;
+
+// Recursive sequences (Phase 9b): terms are worked out up to n = 10⁵.
+export const MAX_SEQUENCE_N = 1e5;
 
 // Kinds of graph a list can make a family of (Phase 9a), and those it can't yet.
 const FAMILY_KINDS = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric']);
@@ -158,9 +168,23 @@ export function analyse(rows, settings = {}, data = null) {
   // ---- 1. Collect definitions -------------------------------------------------
   const defs = new Map(); // name -> def
   const defsByIndex = new Map();
+  // Starting values of sequences, u(0) = 0.2 (Phase 9b): name -> [{ at, body, index, node }]
+  const starts = new Map();
+  const startsByIndex = new Map();
+  const constantArg = (a) => (a.type === 'num' || (a.type === 'neg' && a.arg.type === 'num')) && !PLOT_VARS.has(a.name);
   parsed.forEach((p, i) => {
     if (!p.ast || p.ast.type !== 'eq') return;
     const { lhs, rhs } = p.ast;
+    if (lhs.type === 'apply' && !lhs.primes && !PLOT_VARS.has(lhs.name) && lhs.args.length && lhs.args.every(constantArg)) {
+      const at = lhs.args[0].type === 'num' ? lhs.args[0].value : -lhs.args[0].arg.value;
+      const st = { name: lhs.name, at, body: rhs, index: i, node: lhs };
+      if (lhs.args.length > 1) st.error = 'Starting values are for sequences of one variable, such as u(0) = 1';
+      else if (!Number.isInteger(at) || at < 0) st.error = 'A sequence starts at a whole number n ≥ 0, such as u(0) = 1';
+      if (!starts.has(lhs.name)) starts.set(lhs.name, []);
+      starts.get(lhs.name).push(st);
+      startsByIndex.set(i, st);
+      return;
+    }
     let def = null;
     if (lhs.type === 'sym' && !lhs.parens && !PLOT_VARS.has(lhs.name)) {
       def = { kind: 'variable', name: lhs.name, body: rhs, index: i, node: lhs };
@@ -183,6 +207,32 @@ export function analyse(rows, settings = {}, data = null) {
     }
     defsByIndex.set(i, def);
   });
+
+  // A function that refers to itself, with starting values, is a recursive sequence.
+  for (const [name, list] of starts) {
+    const def = defs.get(name);
+    const seen = new Map();
+    for (const st of list) {
+      if (st.error) continue;
+      if (seen.has(st.at)) {
+        st.error = `${name}(${st.at}) is given more than once`;
+        seen.get(st.at).error = st.error;
+      } else seen.set(st.at, st);
+    }
+    if (!def || def.kind !== 'function' || def.duplicate) {
+      for (const st of list) st.error ||= `${name}(${st.at}) = … is a starting value: it needs a rule such as ${name}(n) = 2${name}(n - 1)`;
+      continue;
+    }
+    if (!referencedNames(def.body).calls.has(name)) {
+      for (const st of list) st.error ||= `${name}(${st.at}) = … only works for a sequence that refers to itself, such as ${name}(n) = 2${name}(n - 1)`;
+      continue;
+    }
+    if (def.params.length !== 1) {
+      for (const st of list) st.error ||= 'Sequences have one variable, such as u(n)';
+      continue;
+    }
+    def.sequence = { starts: list.filter((st) => !st.error) };
+  }
 
   // ---- 2. Lazy resolution of definitions ----------------------------------------
   const varCache = new Map();
@@ -279,6 +329,13 @@ export function analyse(rows, settings = {}, data = null) {
   function resolveFunction(name, node) {
     const def = definition(name, 'function', node);
     if (!def) return undefined;
+    if (def.sequence) return resolve(fnCache, name, node, () => buildSequence(def));
+    if (def.params.length === 1 && referencedNames(def.body).calls.has(name) && !stack.includes(name)) {
+      // u(n) = 2u(n − 1) with no starting value yet.
+      return resolve(fnCache, name, node, () => {
+        throw new ExprError(`${name} refers to itself, so it needs a starting value too, such as ${name}(0) = 1`, ...at(def.node));
+      });
+    }
     return resolve(fnCache, name, node, () => {
       const slots = {};
       def.params.forEach((p, k) => { slots[p.name] = k; });
@@ -297,6 +354,98 @@ export function analyse(rows, settings = {}, data = null) {
       }));
       return { arity: def.params.length, call: (args) => body(args), ast: ex.node };
     });
+  }
+
+  // ---- recursive sequences (Phase 9b) --------------------------------------------------------
+  // u(n) = … referring to u(n − 1) (or any earlier term), with starting values: the terms
+  // are worked out in order and remembered, so u(n) for n up to MAX_SEQUENCE_N is quick.
+  // A term that needs one not yet worked out (u(n + 1)) is undefined.
+  function buildSequence(def) {
+    const name = def.name;
+    const param = def.params[0].name;
+    if (def.params[0].type !== 'sym') throw new ExprError('Sequences have one variable, such as u(n)', ...at(def.node));
+    const startCtx = makeCtx({
+      unknown(n, where) {
+        if (PLOT_VARS.has(n)) throw new ExprError(`A starting value is a number: it can't depend on ${n}`, where.start, where.end);
+      },
+    });
+    const given = new Map();
+    for (const st of def.sequence.starts) {
+      if (referencedNames(st.body).calls.has(name)) {
+        throw new ExprError(`A starting value can't use ${name} itself`, st.body.start, st.body.end);
+      }
+      const ex = withWarnings(st.index, () => expandNode(st.body));
+      if (ex.list) throw new ExprError('A starting value is a single number, not a list', st.body.start, st.body.end);
+      given.set(st.at, compile(ex.node, startCtx)([]));
+    }
+    const lowest = Math.min(...given.keys());
+    const memo = []; // memo[k - lowest]
+    let done = lowest - 1; // terms worked out so far: lowest … done
+    let working = false;
+    function term(m) {
+      if (!Number.isInteger(m) || m < lowest || m > MAX_SEQUENCE_N) return NaN;
+      if (m <= done) return memo[m - lowest];
+      if (working) return NaN; // needs a term after the one being worked out
+      working = true;
+      try {
+        for (let k = done + 1; k <= m; k++) {
+          memo[k - lowest] = given.has(k) ? given.get(k) : body([k]);
+          done = k;
+        }
+      } finally {
+        working = false;
+      }
+      return memo[m - lowest];
+    }
+    const self = { arity: 1, call: (args) => term(args[0]) };
+    const ex = withWarnings(def.index, () => expandNode(def.body, [param]));
+    if (ex.list) throw new ExprError('A sequence’s rule must give a single number, not a list', ...at(def.node));
+    const body = compile(ex.node, makeCtx({
+      slots: { [param]: 0 },
+      self: { name, fn: self },
+      unknown(n, where) {
+        if (n === 'r' || n === 'θ' || n === 't') {
+          throw new ExprError(`${n} is kept for ${n === 't' ? 'parametric curves' : 'polar graphs'}, so use another letter here, such as a (with a = 3)`, where.start, where.end);
+        }
+        if (PLOT_VARS.has(n) && n !== param) {
+          throw new ExprError(`'${n}' isn't the variable of ${name}. Write the rule in terms of ${param}`, where.start, where.end);
+        }
+      },
+    }));
+    return {
+      ...self, sequence: true, lowest, param, rule: ex.node, given,
+    };
+  }
+
+  // u(n) = g(u(n − 1)) with one starting value and nothing else in n: g as a function of
+  // x, for a cobweb diagram (Phase 9b). Null otherwise.
+  function cobwebOf(def, info) {
+    if (info.given.size !== 1) return null;
+    const { name } = def;
+    const param = info.param;
+    let ok = true;
+    const isPrev = (a) => a.type === 'bin' && a.op === '-' && a.left.type === 'sym' && a.left.name === param
+      && a.right.type === 'num' && a.right.value === 1;
+    function swap(node) {
+      if (!node || typeof node !== 'object') return node;
+      if (Array.isArray(node)) return node.map(swap);
+      if (node.type === 'apply' && node.name === name) {
+        if (node.args.length !== 1 || !isPrev(node.args[0])) ok = false;
+        return { type: 'sym', name: 'x', start: node.start, end: node.end };
+      }
+      if (node.type === 'sym' && node.name === param) ok = false;
+      const out = {};
+      for (const [k, v] of Object.entries(node)) out[k] = v && typeof v === 'object' ? swap(v) : v;
+      return out;
+    }
+    const g = swap(info.rule);
+    if (!ok) return null;
+    try {
+      const fn = compile(g, makeCtx({ slots: { x: 0 } }));
+      return { g: unary(fn), u0: [...info.given.values()][0], start: info.lowest, gAst: g };
+    } catch {
+      return null;
+    }
   }
 
   // For lists.js: a user function, or undefined.
@@ -379,7 +528,7 @@ export function analyse(rows, settings = {}, data = null) {
       if (!def || def.kind !== 'function' || def.duplicate) return undefined;
       // The body with any lists used up (mean(L), L[2]); none for a function giving a list.
       const info = functionInfo(name);
-      if (info && info.listy) return undefined;
+      if (info && (info.listy || info.sequence)) return undefined;
       return { params: def.params.map((p) => p.name), body: info && info.ast ? info.ast : def.body };
     },
   };
@@ -403,7 +552,9 @@ export function analyse(rows, settings = {}, data = null) {
     return value;
   }
 
-  function makeCtx({ slots = {}, unknown, extraVars } = {}) {
+  function makeCtx({
+    slots = {}, unknown, extraVars, self = null,
+  } = {}) {
     return {
       slots,
       angle,
@@ -417,6 +568,7 @@ export function analyse(rows, settings = {}, data = null) {
         return v;
       },
       func(name, node) {
+        if (self && name === self.name) return self.fn; // a sequence's own earlier terms
         const f = resolveFunction(name, node);
         if (f && f.listy) throw new ExprError(`${name} gives a list – this needs a single number`, ...at(node));
         return f;
@@ -452,6 +604,22 @@ export function analyse(rows, settings = {}, data = null) {
     };
   }
 
+  // A sequence's starting value, u(0) = 0.2 (Phase 9b).
+  function startRow(st) {
+    const i = st.index;
+    if (st.error) {
+      results[i] = { kind: 'error', error: { message: st.error, start: st.node.start, end: st.node.end } };
+      return;
+    }
+    try {
+      const info = resolveFunction(st.name, st.node);
+      results[i] = { kind: 'start', name: st.name, at: st.at, value: info.given.get(st.at) };
+    } catch (e) {
+      const cached = fnCache.get(st.name);
+      results[i] = { kind: 'error', error: cached && cached.error ? cached.error : errorOf(e) };
+    }
+  }
+
   // Resolve a definition row and record its result.
   function defineRow(def) {
     const i = def.index;
@@ -472,6 +640,15 @@ export function analyse(rows, settings = {}, data = null) {
       } else {
         const fn = resolveFunction(def.name, null);
         const r = { kind: 'function', name: def.name, params: def.params.map((p) => p.name) };
+        if (fn.sequence) {
+          results[i] = {
+            kind: 'sequence', name: def.name, param: fn.param, f: unary(fn.call), lowest: fn.lowest, asSequence: true,
+            cobweb: cobwebOf(def, fn),
+          };
+          const w = warningOf(i);
+          if (w) results[i].warning = w;
+          return;
+        }
         if (fn.listy) {
           // f(x) = a·x with a list: a family of curves; otherwise just a definition.
           results[i] = def.params.length === 1 && def.params[0].name === 'x'
@@ -486,6 +663,11 @@ export function analyse(rows, settings = {}, data = null) {
           r.body = { type: 'apply', name: def.name, args: [{ type: 'sym', name: 'x' }] };
           r.derivative = lazyDerivative(r.body);
           r.discrete = discreteIn(def.body, 'x');
+        }
+        // "Plot as sequence" (Q18): u(n) = 1/n drawn as points (n, u(n)) at whole numbers.
+        if (def.params.length === 1 && rows[i].sequence) {
+          r.f = r.f || unary(fn.call);
+          r.asSequence = true;
         }
         results[i] = r;
       }
@@ -504,8 +686,11 @@ export function analyse(rows, settings = {}, data = null) {
     if (p.empty) { results[i] = { kind: 'empty' }; return; }
     if (p.error) { results[i] = { kind: 'error', error: p.error }; return; }
     if (defsByIndex.has(i)) { defineRow(defsByIndex.get(i)); return; }
+    if (startsByIndex.has(i)) { startRow(startsByIndex.get(i)); return; }
     try {
       results[i] = withWarnings(i, () => classifyRow(p.ast, rows[i]));
+      // "Plot as sequence" on y = f(x): points at whole x (Q18).
+      if (rows[i].sequence && results[i].kind === 'cartesian') results[i].asSequence = true;
       const w = warningOf(i);
       if (w && results[i].kind !== 'error') results[i].warning = results[i].warning || w;
     } catch (e) {
