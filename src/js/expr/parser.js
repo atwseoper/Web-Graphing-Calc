@@ -20,6 +20,7 @@
 //   { type: 'list', items }                    [1, 2, 3] (Phase 9a)
 //   { type: 'range', first, second, last }     [1...10], [0, 0.5...5] (second may be null)
 //   { type: 'index', target, index }           L[2]; index may be a list or range: L[2...4]
+//   { type: 'column', set, col }               D_1.x: a data set's column, as a list (9a-2)
 //                                              (sum(L) and prod(L), with one argument, are
 //                                              'call' nodes: the total of a list)
 //
@@ -192,6 +193,10 @@ class Parser {
           left = { type: 'fact', arg: left, start: left.start, end: t.end };
           continue;
         }
+        if (op === '.' && BP.index > minBp) {
+          left = this.column(left, this.next());
+          continue;
+        }
         if (op === '[' && BP.index > minBp && canIndex(left)) {
           this.next();
           const body = this.nested(() => this.bracket(t));
@@ -306,6 +311,19 @@ class Parser {
     }
     const close = this.expectOp(')', open);
     return { ...first, start: open.start, end: close.end, parens: true };
+  }
+
+  // D_1.x after the '.' has been consumed: a data set's column (Phase 9a-2).
+  column(left, dot) {
+    if (left.type !== 'sym' || left.parens || !/^D(_[\p{L}\d]+)?$/u.test(left.name)) {
+      throw new ExprError("Only data sets have columns: write D_1.x or D_1.y (D with the data set's number)", left.start, dot.end);
+    }
+    const t = this.peek();
+    if (t.type !== 'name' || t.start !== dot.end || (t.value !== 'x' && t.value !== 'y')) {
+      throw new ExprError(`A data set's columns are ${left.name}.x and ${left.name}.y`, dot.start, t.type === 'eof' ? dot.end : t.end);
+    }
+    this.next();
+    return { type: 'column', set: left.name, col: t.value, start: left.start, end: t.end };
   }
 
   // [a, b, c], [a...b] or [a, b...c] after '[' has been consumed: a list or a range.

@@ -21,6 +21,23 @@ export function columnValues(set, col) {
   return out;
 }
 
+// A column as a list for expressions, D_1.x (Phase 9a-2, D61): the points not left out
+// that have a number in every column that has any numbers, so D_1.x and D_1.y stay
+// paired (as in fits) and a single pasted column still works.
+export function expressionColumn(set, col) {
+  const has = { x: false, y: false };
+  for (const p of set.points) {
+    if (finite(p.x)) has.x = true;
+    if (finite(p.y)) has.y = true;
+  }
+  const out = [];
+  for (const p of set.points) {
+    if (p.off || (has.x && !finite(p.x)) || (has.y && !finite(p.y))) continue;
+    if (finite(p[col])) out.push(p[col]);
+  }
+  return out;
+}
+
 // The x and y of points not left out that have both.
 export function pairs(set) {
   const x = [];

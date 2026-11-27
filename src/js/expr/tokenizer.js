@@ -2,7 +2,7 @@
 //
 // Token types: 'num', 'name', 'op', 'eof'. Operators: + - * / ^ ( ) , = ! and, for
 // conditions and derivatives, { } : < > <= >= and ' (prime); for lists (Phase 9a)
-// [ ] and ... (also typed …).
+// [ ] and ... (also typed …), and . for a data set's columns (D_1.x).
 // Naming rules (documented in docs/DESIGN.md):
 //  - Known multi-letter words (function names, pi, theta, ans) are recognised
 //    case-insensitively, longest match first: "sinx" -> sin x, "pix" -> π x.
@@ -40,6 +40,13 @@ export function tokenize(src) {
     const c = src[i];
 
     if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === ' ') {
+      i++;
+      continue;
+    }
+
+    // A data set's column, D_1.x (Phase 9a-2): a dot straight after a name, before a letter.
+    if (c === '.' && tokens.length && tokens[tokens.length - 1].type === 'name' && tokens[tokens.length - 1].end === i && isLetter(src[i + 1] ?? '')) {
+      push('op', '.', i, i + 1);
       i++;
       continue;
     }

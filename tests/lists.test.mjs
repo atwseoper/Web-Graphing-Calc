@@ -355,3 +355,73 @@ test('the setting is saved; long Calc lists keep only their summary', () => {
   assert.equal(back.calc.history[1].output, '[0, 1, 2, …]');
   assert.equal(deserialize(serialize(defaultState())).settings.listIndex, '1');
 });
+
+// ---- data set columns (Phase 9a-2) ------------------------------------------------------------
+
+test('D_1.x parses as a column; other dots are explained', () => {
+  const c = parse('D_1.x').expr;
+  assert.deepEqual([c.type, c.set, c.col], ['column', 'D_1', 'x']);
+  assert.equal(parse('D.y').expr.set, 'D');
+  assert.equal(parse('D_2.y[3]').expr.type, 'index');
+  assert.equal(parse('mean(D_1.y)').expr.args[0].type, 'column');
+  assert.throws(() => parse('a.x'), /Only data sets have columns/);
+  assert.throws(() => parse('D_1.z'), /columns are D_1.x and D_1.y/);
+  assert.throws(() => parse('D.5'), /Missing operator/); // a decimal, not a column
+  assert.equal(toText(parse('D_1.x').expr), 'D_1.x');
+  assert.equal(plainText(prettyLayout(parse('D_1.x'))), 'D₁.x');
+});
+
+test('columns leave out points left out of fits, and rows missing a value', async () => {
+  const { expressionColumn } = await import('../src/js/data/summary.js');
+  const set = { points: [{ x: 1, y: 2 }, { x: 2, y: 4, off: true }, { x: 3, y: null }, { x: 4, y: 8 }] };
+  assert.deepEqual(expressionColumn(set, 'x'), [1, 4]);
+  assert.deepEqual(expressionColumn(set, 'y'), [2, 8]);
+  // A single pasted column (y only) still works.
+  const single = { points: [{ x: null, y: 5 }, { x: null, y: 7 }, { x: null, y: null }] };
+  assert.deepEqual(expressionColumn(single, 'y'), [5, 7]);
+  assert.deepEqual(expressionColumn(single, 'x'), []);
+});
+
+test('columns as lists in rows, and their errors', () => {
+  const data = {
+    sets: [
+      { id: 1, points: [{ x: 1, y: 2 }, { x: 2, y: 4 }, { x: 3, y: 9 }] },
+      { id: 3, points: [{ x: null, y: 5 }, { x: null, y: 7 }] },
+    ],
+  };
+  const a = analyse(rowsOf('D_1.x', 'mean(D_3.y)', '(D_1.x, D_1.y)', 'y = D_1.y[2] x', 'D.x', 'D_2.x', 'D_a.y', 'sum(D_1.x D_1.y)'), {}, data);
+  assert.deepEqual(a.rows[0].values, [1, 2, 3]);
+  assert.equal(a.rows[1].value, 6);
+  assert.equal(a.rows[2].kind, 'points');
+  assert.deepEqual(a.rows[2].ys, [2, 4, 9]);
+  assert.equal(a.rows[3].f(1), 4);
+  assert.match(a.rows[4].error.message, /2 data sets, so say which: D_1.x, D_3.x/);
+  assert.match(a.rows[5].error.message, /no data set D_2 \(there are D_1, D_3\)/);
+  assert.match(a.rows[6].error.message, /numbered/);
+  assert.equal(a.rows[7].value, 2 + 8 + 27);
+  // With one data set, D.x works; with none, it says so.
+  assert.deepEqual(analyse(rowsOf('D.y'), {}, { sets: [data.sets[0]] }).rows[0].values, [2, 4, 9]);
+  assert.match(analyse(rowsOf('D.y'), {}, { sets: [] }).rows[0].error.message, /no data sets yet/);
+  // Column names aren't offered as sliders.
+  assert.equal(analyse(rowsOf('D_1.x + q'), {}, data).rows[0].error.missing.join(), 'q');
+});
+
+test('custom fits that use columns are refitted when the data changes', async () => {
+  const { createFitCache } = await import('../src/js/fit/cache.js');
+  let runs = 0;
+  const cache = createFitCache(() => ({ runs: ++runs }));
+  const set = { id: 1, points: [], hasSigma: false };
+  const fit = { id: 2, model: 'custom', custom: 'a x + mean(D_1.y)', degree: 2, weighted: true, start: {} };
+  const an = analyse([], {});
+  const d1 = { sets: [set] };
+  cache.result(set, fit, an, d1);
+  cache.result(set, fit, an, d1);
+  assert.equal(runs, 1);
+  cache.result(set, fit, an, { sets: [set] });
+  assert.equal(runs, 2);
+  // A model without columns isn't refitted for other data edits.
+  const plainFit = { ...fit, id: 3, custom: 'a x + b' };
+  cache.result(set, plainFit, an, d1);
+  cache.result(set, plainFit, an, { sets: [set] });
+  assert.equal(runs, 3);
+});

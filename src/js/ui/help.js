@@ -46,6 +46,7 @@ function graphPage() {
         ex('L^2 + 1', 'arithmetic and functions work on each element'),
         ex('length(L)  sum(L)  prod(L)', 'how many elements, their total and their product'),
         ex('mean(L)  median(L)  stdev(L)', 'the mean, median and standard deviation (stdev uses n − 1; stdevp uses n). min(L) and max(L) work too'),
+        ex('D_1.x   D_1.y', 'the columns of data set 1 (Data tab) as lists, such as mean(D_1.y) or (D_1.x, D_1.y^2). With only one data set, D.x works too'),
       ),
       ul(
         'Two lists in one row pair up element by element: y = a·x + b with a = [1, 2, 3] and b = [0, 1, 2] draws 3 curves. If their lengths differ, the shorter length is used, with a warning.',
@@ -135,6 +136,13 @@ function dataPage() {
         'Values are rounded to what one pixel of the photo can show, so there are no false digits.',
         ['On a computer: click to place, drag to move, the mouse wheel zooms, arrow keys nudge the selected marker (Shift for ×10), Delete removes a point, Ctrl+Z undoes.'],
         'The photo itself is never saved, in the project or anywhere else: only the points you add are kept.',
+      ),
+    ),
+    section('Data in expressions',
+      ul(
+        ['Each data set\'s columns are lists you can use in the Graph and Calc tabs: ', h('code', {}, 'D_1.x'), ' and ', h('code', {}, 'D_1.y'), ' for data set 1 (shown D₁.x). The number is on the data set\'s card. With only one data set, ', h('code', {}, 'D.x'), ' and ', h('code', {}, 'D.y'), ' work too.'],
+        ['For example ', h('code', {}, 'mean(D_1.y)'), ', ', h('code', {}, 'y = D_1.y[1]·x'), ', or ', h('code', {}, '(D_1.x, D_1.y - f(D_1.x))'), ' for residuals from your own function.'],
+        'Points left out in the table are left out of the lists too, as they are of fits, and so are rows missing an x or a y. Editing the table updates every expression that uses it.',
       ),
     ),
     section('The table',

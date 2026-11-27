@@ -149,7 +149,7 @@ export function createFitPanel({ store, getAnalysis, fitCache, onSendToGraph }) 
 
   function renderCard(c, fit, set) {
     const analysis = getAnalysis();
-    const r = fitCache.result(set, fit, analysis);
+    const r = fitCache.result(set, fit, analysis, store.get().data);
     c.result = r && !r.error && !r.empty ? r : null;
     c.li.style.setProperty('--row-color', fit.color);
     c.swatch.classList.toggle('is-off', fit.hidden);
