@@ -38,7 +38,11 @@ const storage = (() => {
   }
 })();
 const store = createStore(storage ? load(storage) : load({ getItem: () => null }));
-let analysis = analyse(store.get().rows, store.get().settings);
+let analysis = analyse(store.get().rows, store.get().settings, store.get().data);
+// Rows that use a data set's columns (D_1.x, Phase 9a-2) are worked out again as the data changes.
+const COLUMN_REF = /D(?:_\w+)?\.[xy]/;
+const usesColumns = (state) => state.rows.some((r) => COLUMN_REF.test(r.text))
+  || state.data.sets.some((set) => set.fits.some((f) => f.model === 'custom' && COLUMN_REF.test(f.custom)));
 const getAnalysis = () => analysis;
 const fitCache = createFitCache();
 // Fits drawn on the graph: those of visible data sets, with a result.
@@ -409,8 +413,8 @@ function renderAll(state) {
 
 store.subscribe((state, prev) => {
   if (!restoring) undoHistory.record(prev, state);
-  if (state.rows !== prev.rows || state.settings !== prev.settings) {
-    analysis = analyse(state.rows, state.settings);
+  if (state.rows !== prev.rows || state.settings !== prev.settings || (state.data !== prev.data && usesColumns(state))) {
+    analysis = analyse(state.rows, state.settings, state.data);
   }
   if (state.settings !== prev.settings) {
     syncInputModes();

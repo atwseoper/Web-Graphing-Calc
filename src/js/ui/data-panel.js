@@ -220,6 +220,8 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     deleteSet(set.id);
   });
   const metaLine = h('p', { class: 'set-meta', 'aria-live': 'polite' });
+  // How to use the columns in expressions (Phase 9a-2).
+  const refLine = h('p', { class: 'set-ref' });
 
   // ---- display mode and statistics (Phase 7b) ------------------------------------------
   const seg = (label, options, onPick) => {
@@ -318,7 +320,7 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
   const exportRow = h('div', { class: 'table-foot export-row' }, h('span', { class: 'an-label' }, 'Export:'), downloadBtn, copyBtn);
   const tableBox = h('section', { class: 'data-table-box', 'aria-label': 'Data table' },
     h('div', { class: 'table-scroll' }, table), tableStatus, tableFoot, exportRow);
-  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, displayBox, statsCard, fitPanel ? fitPanel.el : '', tableBox);
+  const setBox = h('section', { class: 'set-box' }, setHead, metaLine, refLine, displayBox, statsCard, fitPanel ? fitPanel.el : '', tableBox);
 
   const wrap = h('div', { class: 'data' }, setBar, startBox, importBox, setBox);
   root.replaceChildren(wrap);
@@ -754,6 +756,9 @@ export function createDataPanel({ root, store, getAnalysis, onFrame, fitPanel })
     }
     if (set.hidden) bits.push('hidden');
     setText(metaLine, bits.join(' · '));
+    const sub = String(set.id).replace(/\d/g, (d) => '₀₁₂₃₄₅₆₇₈₉'[d]);
+    const only = state.data.sets.length === 1 ? ', or D.x and D.y while it is the only data set' : '';
+    setText(refLine, `Use its columns in expressions as D${sub}.x and D${sub}.y (type D_${set.id}.x)${only}.`);
 
     renderDisplay(state, set);
     renderStats(state, set);

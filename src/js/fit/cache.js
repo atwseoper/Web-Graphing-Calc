@@ -8,9 +8,19 @@ import { analyse } from '../expr/model.js';
 import { runFit } from './run.js';
 import { customText } from './models.js';
 
+// A custom model can use data set columns (D_1.x, Phase 9a-2): then any data edit counts.
+const COLUMN_REF = /D(?:_\w+)?\.[xy]/;
+
 export function createFitCache(run = runFit) {
   const cache = new Map(); // fit id -> { key, points, deps, result }
   const plain = new Map(); // angle -> analysis with no definitions
+  const dataIds = new WeakMap();
+  let nextDataId = 1;
+  const dataId = (data) => {
+    if (!data) return 0;
+    if (!dataIds.has(data)) dataIds.set(data, nextDataId++);
+    return dataIds.get(data);
+  };
 
   function analysisFor(fit, analysis) {
     if (fit.model === 'custom') return analysis;
@@ -19,10 +29,11 @@ export function createFitCache(run = runFit) {
     return plain.get(angle);
   }
 
-  function result(set, fit, analysis) {
+  function result(set, fit, analysis, data = null) {
     const an = analysisFor(fit, analysis);
     const key = JSON.stringify([fit.model, fit.degree, fit.custom, fit.weighted, fit.start, set.hasSigma]);
-    const deps = fit.model === 'custom' ? analysis.dependencyKey(customText(fit.custom)) : an.angle;
+    let deps = fit.model === 'custom' ? analysis.dependencyKey(customText(fit.custom)) : an.angle;
+    if (fit.model === 'custom' && COLUMN_REF.test(fit.custom)) deps += `|data ${dataId(data)}`;
     const c = cache.get(fit.id);
     if (c && c.key === key && c.points === set.points && c.deps === deps) return c.result;
     let r;
@@ -42,7 +53,7 @@ export function createFitCache(run = runFit) {
     for (const set of state.data.sets) {
       for (const fit of set.fits) {
         live.add(fit.id);
-        out.push({ set, fit, result: result(set, fit, analysis) });
+        out.push({ set, fit, result: result(set, fit, analysis, state.data) });
       }
     }
     for (const id of [...cache.keys()]) if (!live.has(id)) cache.delete(id);

@@ -41,6 +41,7 @@ import { toText } from './print.js';
 import { isConstantName, isFunctionName } from './builtins.js';
 import { DISCRETE_FUNCTIONS } from '../numerics/distributions.js';
 import { expand, expandParts, MAX_CURVES } from './lists.js';
+import { expressionColumn } from '../data/summary.js';
 
 export const PLOT_VARS = new Set(['x', 'y', 'r', 'θ', 't']);
 
@@ -139,7 +140,8 @@ export function explainUnknown(error, text) {
   return error;
 }
 
-export function analyse(rows, settings = {}) {
+// data: the Data tab's { sets } (Phase 9a-2), for columns such as D_1.x.
+export function analyse(rows, settings = {}, data = null) {
   const angle = settings.angle === 'deg' ? 'deg' : 'rad';
   const base = settings.listIndex === '0' ? 0 : 1; // list positions count from 1 or 0 (D61)
   const results = rows.map(() => null);
@@ -329,7 +331,7 @@ export function analyse(rows, settings = {}) {
       return compile(node, makeCtx())([]);
     },
     column(set, col, node) {
-      throw new ExprError('Data set columns arrive in Phase 9a-2', node.start, node.end);
+      return dataColumn(set, col, node);
     },
     warn(message) {
       if (warnTo === null) return;
@@ -337,6 +339,30 @@ export function analyse(rows, settings = {}) {
       warningsByRow.get(warnTo).add(message);
     },
   };
+  // D_1.x: data set 1's x column; D.x when there is only one data set (D61).
+  function dataColumn(name, col, node) {
+    const sets = (data && data.sets) || [];
+    const ref = (s) => `D_${s.id}.${col}`;
+    let set;
+    if (name === 'D') {
+      if (!sets.length) throw new ExprError('There are no data sets yet – add one in the Data tab', node.start, node.end);
+      if (sets.length > 1) {
+        const some = sets.slice(0, 3).map(ref).join(', ');
+        throw new ExprError(`There are ${sets.length} data sets, so say which: ${some}${sets.length > 3 ? ' …' : ''}`, node.start, node.end);
+      }
+      [set] = sets;
+    } else {
+      const m = /^D_(\d+)$/.exec(name);
+      if (!m) throw new ExprError(`Data sets are numbered: write D_1.${col}, D_2.${col} …`, node.start, node.end);
+      set = sets.find((s) => s.id === Number(m[1]));
+      if (!set) {
+        const known = sets.length ? ` (there ${sets.length === 1 ? 'is' : 'are'} ${sets.slice(0, 3).map((s) => `D_${s.id}`).join(', ')})` : ' – add one in the Data tab';
+        throw new ExprError(`There's no data set ${name}${known}`, node.start, node.end);
+      }
+    }
+    return expressionColumn(set, col);
+  }
+
   function expandNode(node, locals = []) {
     return expand(node, listEnv, { locals });
   }

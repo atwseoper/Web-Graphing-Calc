@@ -207,6 +207,13 @@
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+/* Column names for expressions (Phase 9a-2). */
+.set-ref {
+  margin: 2px 4px 4px 48px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
 
 /* Table of points */
 .data-table-box { display: grid; gap: 4px; }
