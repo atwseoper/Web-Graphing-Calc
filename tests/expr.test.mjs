@@ -241,8 +241,11 @@ test('rows: errors are specific', () => {
   assert.equal(fnLoop.rows[0].error.message, "'f' and 'g' depend on each other");
   assert.equal(fnLoop.rows[1].error.message, "'f' and 'g' depend on each other");
 
+  // A one-variable function referring to itself is a sequence without a starting value (Phase 9b).
   const rec = analyse([{ text: 'f(x) = f(x - 1)' }]);
-  assert.match(rec.rows[0].error.message, /in terms of itself/);
+  assert.match(rec.rows[0].error.message, /refers to itself, so it needs a starting value too, such as f\(0\) = 1/);
+  const rec2 = analyse([{ text: 'f(x, y) = f(x - 1, y)' }]);
+  assert.match(rec2.rows[0].error.message, /in terms of itself/);
 
   const dep = analyse([{ text: 'a = x' }, { text: 'y = a' }]);
   assert.match(dep.rows[0].error.message, /can't depend on x/);

@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v1.0 – Phases 9a and 9a-2 (lists, curve families, data columns) complete; Phase 9b in progress, Phase 10 planned · **Updated:** 27 November 2026
+**Status:** v1.0 – Phase 9 (lists, curve families, data columns and sequences) complete; Phase 10 planned · **Updated:** 27 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -71,6 +71,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D61 | Phase 9 open questions settled (section 9, Q23–Q30), with one change to the plan: data-set columns in expressions move from “later” (7.2, Q12) into Phase 9a. *Indexing:* `L[2]` picks an element, counting from 1 by default (L = [10, 20, 30] gives 20); `L[2...3]` and `L[[1, 3]]` pick several. Settings can switch to counting from 0. That setting is the device's, like the keypad (not undoable, not taken from projects), but project files and share links record their creator's choice, and a project made with the other setting has every position in it shifted by one as it opens (`L[2]` → `L[1]`, `L[k]` → `L[k-1]`, ranges and lists of positions item by item), with the open toast saying so. A position beyond the end, or that isn't a whole number, gives undefined with a warning on the row. *Families:* two lists in one row pair up element by element (`y = a·x + b` with a = [1, 2, 3] and b = [0, 1, 2] draws 3 curves); lists of different lengths use the shorter length with a warning; a family over 50 curves draws the first 50 with a warning. *Data columns:* a data set's columns are lists written `D_1.x`, `D_1.y` (shown D₁.x), D with the data set's number; with only one data set, `D.x` works too. Points left out in the table are left out of the lists, as they are of fits; a row is used when every column that has numbers in it has a number in that row, so x and y stay paired. Columns are live: editing the table updates every expression that uses them. *Sequences:* a sequence starts at the lowest n given a starting value (`u(1) = 1` starts at n = 1; u(0) is then undefined). *Showing lists:* a long list shows its first 3 and last 2 elements and its length (`[1, 4, 9, …, 998001, 1000000]`, 1,000 elements), with “Show all” opening the full list, in Graph rows and the Calc tab alike. Phase 9 is three pull requests: 9a lists and curve families, 9a-2 data columns, 9b sequences. | 27 Nov 2026 |
 | D62 | Phase 9a details (`expr/lists.js`). Lists are taken apart before compiling: an expression with lists becomes either one ordinary expression (where every list is used up, as in `mean(L)` or `L[2]`) or one expression per element, so each curve of a family is an ordinary row that compiles, differentiates and samples as before, and rows without lists are left exactly as they were (the same objects). Constant elements are folded as they are made, so arithmetic on a 10,000-element list doesn't compile 10,000 times. List variables must be constant (no x); a function whose body gives a list (`f(x) = L·x`) is inlined where it is used, and one that uses its list up (`g(x) = sum(L)·x`) stays an ordinary function with a derivative. A position that varies, such as a sum's counting letter (`sum(L[k]^2, k, 1, 4)`) or a function's parameter (`f(n) = L[n]`), becomes a lookup the compiler evaluates (undefined outside the list); a fixed position outside the list, or not a whole number, is undefined with a warning (D61). A range's ends and step must be fixed numbers; `[1...10]` counts in steps of 1 (−1 when the end is smaller), `[a, b...c]` in steps of b − a, stopping at the last value that doesn't pass c, with rounding noise removed (0.1·3 is 0.3); a range that never reaches its end, or a step of 0, is an error. List functions: `length`, `sum`, `prod`, `mean`, `median`, `stdev` (n − 1) and `stdevp` (n), each taking one list, plus `min(L)` and `max(L)`; with a single number they treat it as a one-element list; an empty list gives 0 for length and sum, 1 for prod, undefined otherwise. These names are now reserved words (like `sum`). Families are drawn for y = …, x = …, r = …, parametric curves and f(x) = … definitions, in shades of the row's colour from a little darker to a little lighter; a number among curves (`y = [x, 2]`) is a horizontal line; implicit curves, inequalities and slope fields with lists are refused for now, because their grid sampling is too slow fifty times over. Each curve can be traced and is labelled by the list variables that vary (`a = 2, b = 1`), or `2 of 5` for unnamed lists; families have no analysis panel or table. `(L, M)` with numbers draws up to 10,000 points like a data set's, traceable. A list's elements show under its row (not when typed as plain numbers), and Calc results that are lists show the same way; Calc history saves the elements of lists up to 500 long and only the summary of longer ones, so a few large results can't fill the browser's storage. Tapping a list result inserts it when it has at most 50 elements, otherwise its expression in brackets. The keypad's {} page swaps sign, Γ and nPr (still typeable) for [, ] and …; `...` can be typed for …. Settings has “List positions start at 1 / 0”, saved with the device's other settings; projects carry it as `settings.listIndex`, and opening converts positions in every expression field (rows and their boxes, Solve inputs, custom fit models and starting values) with the toast ending “· list positions now count from 1”. | 27 Nov 2026 |
 | D63 | Phase 9a-2 details, data-set columns as lists. `D_1.x` is a column node (a dot straight after a name and before a letter); only `D` or `D_<number>` can have columns, and only `.x` and `.y` (σy isn't a column). The number is the data set's id, which never changes or gets reused, so deleting data set 2 can't quietly point `D_3.x` somewhere else; the set's card says “Use its columns in expressions as D₁.x and D₁.y (type D_1.x)”. `D.x` works while there is exactly one data set; with several, the error lists their names. A point is used when it isn't left out and has a number in every column that has any numbers (`data/summary.js` `expressionColumn`), so x and y stay paired, as in fits, and a set of one pasted column works. Column set names aren't variables: they never get “Add slider” chips. The analysis takes the data as a third argument and is worked out again when the data changes, but only if a row (or a custom fit model) mentions a column, so editing a table doesn't redo the Graph tab otherwise; custom fits whose model mentions a column are refitted on any data edit. | 27 Nov 2026 |
+| D64 | Phase 9b details, recursive sequences. A one-variable function that calls itself, with starting-value rows `u(0) = …` (any name, any parameter letter, whole n ≥ 0), is a sequence. Its terms are worked out in order from the lowest starting n and remembered for the rest of that analysis, so `u(10^5)` costs one pass and redrawing costs nothing; the rule can call any earlier term (`F(n − 1) + F(n − 2)`), sliders, other functions and list positions (`L[n]`). Terms are defined for whole n from the lowest starting value to 10⁵ (`MAX_SEQUENCE_N`); a term that would need one not yet worked out (`u(n) = u(n + 1)`) is undefined rather than an endless loop. Errors say what is missing: a self-calling function without a starting value (“needs a starting value too, such as u(0) = 1”), a starting value without a self-calling rule, a starting value given twice, not at a whole n ≥ 0, or calling the sequence itself. r, θ and t can't appear in a rule, because they are graph letters (`r = 3` is a polar circle), so examples use a: `u(n) = a·u(n − 1)(1 − u(n − 1))`. Sequences evaluate anywhere, including `u([0...10])`; they have no symbolic derivative or Taylor polynomial. A sequence row is drawn as dots (n, u(n)) for whole n in view, smaller when crowded, traced at whole n, with a table of values starting at its first term and the status “Sequence from n = 0”. “Plot as sequence” (Q18) is a row setting (`sequence`) on y = … rows and one-variable functions (u(n) = 1/n is drawn only with it on); those rows keep their analysis panel when the variable is x, without points of interest. Cobweb diagrams are offered when the rule uses only u(n − 1) and constants, with one starting value: the row's “Cobweb diagram” (`cobweb`) replaces the dots with y = g(x), a dashed y = x and the staircase from (u₀, 0), for `cobwebN` steps (default 20, 1–500); ▷ draws it a step at a time (about 4 s in all, 0.15–0.7 s a step) with the term reached labelled, and zoom-to-fit frames the staircase with y = x at 45°. The bifurcation diagram (Q19) is left for a later pull request (7.2): it needs a separate long-run sampling mode and its own view, which didn't fit this phase. | 27 Nov 2026 |
 
 ## 1. Purpose
 
@@ -103,7 +104,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra, **
 | Lightweight pretty-printing of input | P3 | Moderate | Done (D38): custom renderer, no MathJax |
 | Probability distributions (normal, t, χ², binomial, Poisson: pdf, cdf, inverse) | v2 | Moderate | Phase 7b |
 | Lists and ranges (`[1, 2, 3]`, `[1...10]`); a list in a row draws a family of curves | v2 | Hard | Done in Phase 9a (D61, D62): lists are expanded before compiling |
-| Recursive sequences (`u(n) = r·u(n−1)(1 − u(n−1))`, `u(0) = 0.2`) | v2 | Moderate | Phase 9b |
+| Recursive sequences (`u(n) = a·u(n−1)(1 − u(n−1))`, `u(0) = 0.2`) | v2 | Moderate | Done in Phase 9b (D64) |
 
 ### 3.2 Cartesian graphing
 | Feature | Pri | Difficulty | Notes |
@@ -125,7 +126,7 @@ Priority: **P1** = MVP, **P2** = first full version, **P3** = optional extra, **
 | Draggable points (coordinates tied to sliders; points that slide along a curve) | v2 | Moderate | Done in Phase 6a (D51) |
 | Log and log-log axes | v2 | Moderate | Phase 7a: sampling, ticks and pan/zoom in log space |
 | Histograms and box plots of a data column | v2 | Moderate | Phase 7b |
-| Cobweb diagrams for first-order recurrences | v2 | Easy | Phase 9b |
+| Cobweb diagrams for first-order recurrences | v2 | Easy | Done in Phase 9b (D64) |
 
 ### 3.3 Polar mode
 | Feature | Pri | Difficulty |
@@ -287,7 +288,7 @@ build/
 | 6 – Drag & calculus ✅ | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
 | 7 – Axes & statistics ✅ | 7a log and log-log axes; 7b summary statistics, histograms, box plots, distribution functions | Parity with a handheld's statistics |
 | 8 – Photo digitiser ✅ | Image import, axis calibration, tapping points into a data set | Real-world data straight into fitting |
-| 9 – Lists & sequences | 9a lists, ranges and curve families ✅; 9a-2 data-set columns as lists (D61, D63) ✅; 9b recursive sequences, term plots, cobweb diagrams | Richer expressions |
+| 9 – Lists & sequences ✅ | 9a lists, ranges and curve families; 9a-2 data-set columns as lists (D61, D63); 9b recursive sequences, term plots, cobweb diagrams (D64) | Richer expressions |
 | 10 – Notes & examples | 10a notes rows, folders and row reordering; 10b built-in examples gallery | Version 2.0 |
 
 Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, self-contained work first: Phase 5 means every later release reaches installed apps through the update toast, and the shared-link confirmation is in place well before notes arrive. Phase 6 builds on code that already exists (sliders, the play mechanics, `derive.js`, the analysis panel). Log axes (7a) come before the digitiser, so calibrating a log-scaled image can reuse the same mapping. Lists (Phase 9) come late because they change the expression engine everywhere. Notes and examples (Phase 10) come last, so the examples can show off everything version 2 adds.
@@ -337,7 +338,7 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 - Then tap to add points; points can be dragged and deleted. “Done” makes a new data set (x, y), ready for fitting.
 - The image itself is never stored, in project files or anywhere else; only the points are kept (Q14). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
 
-**Phase 9 – Lists, curve families and sequences (three PRs: 9a, 9a-2, 9b; decisions in D61)**
+**Phase 9 – Lists, curve families and sequences (three PRs: 9a, 9a-2, 9b; decisions in D61, details in D62–D64) ✅**
 - *9a Lists.*
   - Square-bracket lists `[1, 2, 3]` and ranges `[1...10]` and `[0, 0.5...5]`; list variables `L = […]` (single letters, as D10 requires).
   - Arithmetic and functions apply to each element. A row that uses a list draws one curve per element, in shades of the row's colour. `(L, M)` plots the pairs as points.
@@ -349,7 +350,7 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
   - A function that refers to itself at n − 1 (or n − 2 …) together with starting-value rows such as `u(0) = 0.2` is a recursive sequence, not a circular definition. It is evaluated with memoisation for whole n ≥ 0, up to n = 10⁵.
   - A per-row “Plot as sequence” toggle draws terms as points (n, u(n)) instead of a curve; it is switched on automatically for recursive rows, and explicit sequences such as `u(n) = 1/n` can use it too (Q18). Sequences evaluate in the Calc tab (`u(50)`).
   - First-order recurrences u(n) = g(u(n − 1)) offer a cobweb diagram: y = g(x), y = x and the staircase, with a play button that adds one step at a time.
-  - If 9b has room (Q19), a bifurcation diagram: for a recurrence with a slider, the long-run values plotted against that slider's range (the logistic map's period-doubling route to chaos). Otherwise it moves to a later PR.
+  - If 9b has room (Q19), a bifurcation diagram: for a recurrence with a slider, the long-run values plotted against that slider's range (the logistic map's period-doubling route to chaos). Otherwise it moves to a later PR. *It moved (D64, 7.2).*
 
 **Phase 10 – Notes, folders and examples (two PRs)**
 - *10a Notes, folders and row reordering.*
@@ -364,6 +365,8 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 
 ### 7.2 Later (not scheduled)
 - Hypothesis tests and confidence intervals (z, t, χ²) on data sets (Q11).
+- Bifurcation diagrams for recurrences with a slider (Q19, D64).
+- Lists in implicit curves, inequalities and slope fields (D62), if a faster grid sampler makes 50 of them practical.
 - Opening `.json` project files directly in the installed app (manifest file handling); these would ask first, under D47.
 
 ## 8. Expression syntax (as implemented)
@@ -390,8 +393,9 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 | `L[2]`, `L[2...4]`, `L[[1, 3]]` | Elements, counting from 1 (or 0, by the device setting, D61) |
 | `length(L)`, `sum(L)`, `prod(L)`, `mean(L)`, `median(L)`, `stdev(L)`, `stdevp(L)`, `min(L)`, `max(L)` | Functions of a whole list |
 | `D_1.x`, `D_1.y` (or `D.x` with one data set) | A data set's columns as lists, without left-out points (D63) |
+| `u(n) = 2u(n - 1) + 1` with `u(0) = 1` | A recursive sequence, drawn as points; `u(5)`, `u([0...10])` (D64) |
 
-- Rows can be in any order. Duplicate and circular definitions are reported on every affected row.
+- Rows can be in any order. Duplicate and circular definitions are reported on every affected row. A one-variable function that calls itself is a sequence and needs starting values (D64).
 - Precedence: `+ −` < `× ÷` and implicit multiplication < unary minus < `^` (right-associative) < `!`. So `-x^2` = −(x²) and `2^3^2` = 2⁹.
 - Functions without brackets take the following product of non-function factors: `sin 2x` = sin(2x), `sin x cos x` = sin(x)·cos(x). `sin^2 x` = (sin x)², `sin^-1 x` = asin(x).
 - `x2` and `2 3` are errors (missing operator), not 2x or 23.

@@ -7,6 +7,8 @@
 // everything drawn goes through toScreen, so values ≤ 0 on a log axis aren't drawn.
 // A row with a list draws a family of curves in shades of its colour, or a set of points
 // (Phase 9a); each curve can be traced, and is labelled with its list element.
+// Sequences, and rows with "Plot as sequence", are points at whole numbers; a first-order
+// recurrence can show a cobweb diagram instead (Phase 9b).
 import {
   createViewport, toScreen, toWorld, worldBounds, zoomAt, panBy, homeViewport, resizeViewport,
   screenX, screenY, axisX, axisY, fromAxisX, axisRange, pxPerUnitX, pxPerUnitY, slopeInAxes, setAxes, axisFit,
@@ -27,8 +29,9 @@ import { pointsOfInterest } from '../numerics/analysis.js';
 import { contour, regionRects, snapToCurve } from '../plot/implicit.js';
 import { solutionThrough } from '../numerics/ode.js';
 import { riemannOf, taylorOf, secantOf } from '../expr/calculus.js';
+import { cobwebPath, cobwebSteps } from '../numerics/cobweb.js';
 
-const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope', 'family', 'points']);
+const PLOTTABLE = new Set(['cartesian', 'cartesian-x', 'polar', 'parametric', 'point', 'function', 'implicit', 'inequality', 'slope', 'family', 'points', 'sequence']);
 const REGION_ALPHA = 0.16;
 const SLOPE_SPACING = 30; // px between slope-field marks
 const FILL_EDGE = 10; // px beyond the canvas edge that fills reach
@@ -68,8 +71,9 @@ export function isPlottable(result) {
 }
 
 // y = f(x) rows (including f(x) = … definitions in x) that analysis works on.
+// (A function of another letter plotted as a sequence, v(n) = 1/n, isn't: Phase 9b.)
 export function isFunctionOfX(result) {
-  return !!result && (result.kind === 'cartesian' || (result.kind === 'function' && !!result.f));
+  return !!result && (result.kind === 'cartesian' || (result.kind === 'function' && !!result.f && !!result.body));
 }
 
 // Evaluate an optional number field of a row ('' -> null).
@@ -80,7 +84,7 @@ export function fieldValue(analysis, text) {
 }
 
 export function createGraphView({
-  canvas, store, getAnalysis, getFits = () => [], pointDrag = null, secantPlayer = null,
+  canvas, store, getAnalysis, getFits = () => [], pointDrag = null, secantPlayer = null, cobwebPlayer = null,
 }) {
   let ctx = canvas.getContext('2d'); // swapped for an off-screen canvas by renderImage()
   let renderScale = 0; // pixels per CSS px when rendering an image (0 = the screen's)
@@ -202,7 +206,8 @@ export function createGraphView({
   function sampleRow(r, angleFactor) {
     switch (r.kind) {
       case 'cartesian':
-      case 'function': return r.discrete ? stemPoints(r.f) : sampleCartesian(r.f, vp);
+      case 'function': return r.discrete || r.asSequence ? stemPoints(r.f) : sampleCartesian(r.f, vp);
+      case 'sequence': return stemPoints(r.f, r.lowest);
       case 'cartesian-x': return sampleCartesianX(r.f, vp);
       case 'parametric': return sampleParametric(r.fx, r.fy, r.domain.min, r.domain.max, vp);
       case 'polar': return samplePolar(r.f, r.domain.min, r.domain.max, vp, angleFactor);
@@ -270,6 +275,11 @@ export function createGraphView({
         } else {
           drawPoint(ctx, sx, sy, row.color);
         }
+      } else if (r.kind === 'sequence' && row.cobweb && r.cobweb) {
+        curves[curves.length - 1].lines = []; // the terms aren't drawn, so they can't be traced
+        drawCobweb(row, r, analysis);
+      } else if (r.asSequence) {
+        drawSequenceDots(lines, row.color);
       } else if (r.discrete) {
         drawStems(lines, row.color);
       } else if (sweeps.has(row.id) && (r.kind === 'polar' || r.kind === 'parametric')) {
@@ -330,9 +340,10 @@ export function createGraphView({
   // y = binompdf(10, 0.3, x) and the like are drawn as stems at whole numbers: each stem
   // is a one-point "line" (so it can be tapped and traced), drawn down to the axis.
   const MAX_STEMS = 4000;
-  function stemPoints(f) {
+  // Also the points of a sequence (Phase 9b), from n = lowest.
+  function stemPoints(f, lowest = -Infinity) {
     const { xMin, xMax } = worldBounds(vp);
-    const lo = Math.ceil(vp.logX ? Math.max(xMin, 1) : xMin);
+    const lo = Math.max(lowest, Math.ceil(vp.logX ? Math.max(xMin, 1) : xMin));
     const hi = Math.floor(xMax);
     if (!(hi >= lo)) return [];
     const every = Math.max(1, Math.ceil((hi - lo + 1) / MAX_STEMS));
@@ -356,6 +367,48 @@ export function createGraphView({
     if (spacing >= 6) {
       const r = spacing >= 14 ? 4 : 2.5;
       drawScatter(ctx, points.map((p) => p.x[0]), points.map((p) => p.y[0]), color, { radius: r });
+    }
+  }
+
+  // ---- sequences (Phase 9b) -----------------------------------------------------------------
+  // Terms as dots, smaller when they are close together.
+  function drawSequenceDots(points, color) {
+    if (!points.length) return;
+    const spacing = points.length > 1 ? Math.abs(points[1].x[0] - points[0].x[0]) : Infinity;
+    const radius = spacing >= 14 ? 4 : spacing >= 6 ? 3 : 1.75;
+    drawScatter(ctx, points.map((p) => p.x[0]), points.map((p) => p.y[0]), color, { radius });
+  }
+
+  // A cobweb diagram: y = g(x), the line y = x and the staircase of the terms, drawn a
+  // step at a time while ▷ plays.
+  function drawCobweb(row, r, analysis) {
+    const { g, u0 } = r.cobweb;
+    const lines = sampleCartesian(g, vp);
+    drawLines(ctx, lines, row.color, 2.5);
+    curves.push({ rowId: `${row.id}#g`, kind: 'cartesian', color: row.color, lines, result: { kind: 'cartesian', f: g } });
+    drawLines(ctx, sampleCartesian((x) => x, vp), colors.label, 1.5, { dash: [6, 5], alpha: 0.75 });
+    const wanted = cobwebSteps(fieldValue(analysis, row.cobwebN));
+    if (wanted.error) return;
+    const playing = cobwebPlayer ? cobwebPlayer.value(row.id) : null;
+    const steps = playing ?? wanted.steps;
+    const path = cobwebPath(g, u0, steps);
+    const xs = [];
+    const ys = [];
+    for (let k = 0; k < path.xs.length; k++) {
+      const [sx, sy] = toScreen(vp, path.xs[k], path.ys[k]);
+      xs.push(sx);
+      ys.push(vp.logY && path.ys[k] <= 0 ? vp.height + FILL_EDGE : sy);
+    }
+    drawLines(ctx, [{ x: xs, y: ys }], row.color, 1.75, { alpha: 0.9 });
+    const [sx0, sy0] = [xs[0], ys[0]];
+    if (Number.isFinite(sx0) && Number.isFinite(sy0)) drawPoi(ctx, sx0, sy0, row.color, colors, true);
+    // While playing, the term just reached.
+    if (playing !== null && path.xs.length > 1) {
+      const n = (path.xs.length - 1) / 2;
+      const k = path.xs.length - 1;
+      const [sx, sy] = toScreen(vp, path.xs[k], path.ys[k]);
+      const sub = String(r.lowest + n).replace(/\d/g, (d) => '₀₁₂₃₄₅₆₇₈₉'[d]);
+      if (Number.isFinite(sx) && Number.isFinite(sy)) drawMarker(ctx, sx, sy, row.color, `${r.name}${sub} = ${formatNumber(path.ys[k], 6)}`, colors, vp.width, vp.height);
     }
   }
 
@@ -940,7 +993,7 @@ export function createGraphView({
     const key = `${xMin}|${xMax}|${others.map((o) => o.id).join(',')}`;
     const hit = poiCache.map.get(rowId);
     if (hit && hit.key === key) return hit.value;
-    if (r.discrete) return []; // stems: roots and extrema of a step function mean nothing
+    if (r.discrete || r.asSequence) return []; // stems and sequences: roots and extrema mean nothing
     if (!allowCompute) return null;
     const d = r.derivative ? r.derivative() : null;
     const samples = Math.round(Math.min(800, Math.max(200, vp.width)));
@@ -1053,6 +1106,10 @@ export function createGraphView({
         const y = r.f(tr.x);
         return Number.isFinite(y) ? { x: tr.x, y, label: fmt(tr.x, y) } : null;
       }
+      case 'sequence': {
+        const y = r.f(tr.x);
+        return Number.isFinite(y) ? { x: tr.x, y, label: `${r.name}(${formatNumber(tr.x, 8)}) = ${formatNumber(y, 8)}` } : null;
+      }
       case 'cartesian-x': {
         const x = r.f(tr.y);
         return Number.isFinite(x) ? { x, y: tr.y, label: fmt(x, tr.y) } : null;
@@ -1130,9 +1187,11 @@ export function createGraphView({
     const [wx, wy] = toWorld(vp, sx, sy);
     switch (curve.kind) {
       case 'cartesian':
-      case 'function': {
-        // Stems of a discrete distribution: the nearest whole number.
-        const hit = curve.result.discrete ? nearestOnLines(curve.lines, sx, sy) : null;
+      case 'function':
+      case 'sequence': {
+        // Stems of a discrete distribution, and sequences: the nearest whole number.
+        const hit = curve.result.discrete || curve.result.asSequence ? nearestOnLines(curve.lines, sx, sy) : null;
+        if (curve.result.asSequence && !hit) break;
         trace = { rowId: curve.rowId, kind: curve.kind, x: hit ? hit.t : wx };
         break;
       }
@@ -1377,10 +1436,10 @@ export function createGraphView({
     state.rows.forEach((row, i) => {
       const r = analysis.rows[i];
       if (row.hidden || !isPlottable(r)) return;
-      if (r.kind === 'family') r.members.forEach(addResult);
-      else addResult(r);
+      if (r.kind === 'family') r.members.forEach((m) => addResult(m, row));
+      else addResult(r, row);
     });
-    function addResult(r) {
+    function addResult(r, row) {
       if (r.kind === 'inequality' || r.kind === 'slope') return; // they fill the plane
       if (r.kind === 'points') {
         only1D = false;
@@ -1406,7 +1465,27 @@ export function createGraphView({
         }
         return;
       }
-      if ((r.kind === 'cartesian' || r.kind === 'function') && r.discrete) {
+      if (r.kind === 'sequence' && row.cobweb && r.cobweb) {
+        // The cobweb's staircase, with y = x at 45°.
+        const wanted = cobwebSteps(fieldValue(analysis, row.cobwebN));
+        const path = cobwebPath(r.cobweb.g, r.cobweb.u0, wanted.steps || 20);
+        const vals = [...path.xs, ...path.ys];
+        xs.push(...vals);
+        ys.push(...vals);
+        only1D = false;
+        round = true;
+      } else if (r.kind === 'sequence') {
+        // The terms in view, or the first ones from where it starts.
+        for (const p of stemPoints(r.f, r.lowest)) ys.push(r.f(p.t[0]));
+        if (!ys.length) {
+          const { xMax } = worldBounds(vp);
+          for (let n = r.lowest; n <= Math.max(r.lowest + 20, xMax); n++) {
+            const y = r.f(n);
+            if (Number.isFinite(y)) { xs.push(n); ys.push(y); }
+          }
+          only1D = false;
+        }
+      } else if ((r.kind === 'cartesian' || r.kind === 'function') && (r.discrete || r.asSequence)) {
         for (const p of stemPoints(r.f)) ys.push(r.f(p.t[0])); // the stems, at whole numbers
       } else if (r.kind === 'cartesian' || r.kind === 'function') {
         for (let k = 0; k <= N; k++) {

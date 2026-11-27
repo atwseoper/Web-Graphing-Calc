@@ -17,6 +17,7 @@ import { parse } from '../expr/parser.js';
 import { prettyLayout, isRich } from '../expr/pretty.js';
 import { renderMath } from './math-view.js';
 import { listText, countText } from '../expr/lists.js';
+import { cobwebSteps, DEFAULT_COBWEB_STEPS } from '../numerics/cobweb.js';
 
 const ERROR_DELAY = 900; // ms after the last keystroke before showing an error in the row being edited
 const TABLE_ROWS = 10;
@@ -33,7 +34,7 @@ const INPUT_ATTRS = {
 };
 
 export function createExprList({
-  listEl, addBtn, store, graph, secantPlayer = null,
+  listEl, addBtn, store, graph, secantPlayer = null, cobwebPlayer = null,
 }) {
   const els = new Map(); // row id -> element refs
   const taylorOpen = new Set(); // row ids whose Taylor coefficient table is open
@@ -158,6 +159,35 @@ export function createExprList({
       },
     });
     const listAll = h('div', { class: 'list-all', hidden: true, tabindex: '0' });
+    // Sequences (Phase 9b): "Plot as sequence", and a cobweb diagram with steps and ▷.
+    const seqBtn = h('button', {
+      type: 'button', class: 'chip calc-chip', 'aria-pressed': 'false',
+      onClick: () => {
+        const r = rowById(id);
+        if (r) updateRow(id, { sequence: !r.sequence });
+      },
+    }, 'Plot as sequence');
+    const cobwebBtn = h('button', {
+      type: 'button', class: 'chip calc-chip', 'aria-pressed': 'false',
+      onClick: () => {
+        const r = rowById(id);
+        if (!r) return;
+        if (cobwebPlayer) cobwebPlayer.stop(id);
+        updateRow(id, { cobweb: !r.cobweb });
+      },
+    }, 'Cobweb diagram');
+    const cobwebN = h('input', { class: 'mini-input', type: 'text', ...INPUT_ATTRS, 'data-keypad': '', 'aria-label': 'Cobweb steps' });
+    cobwebN.addEventListener('input', () => {
+      if (cobwebPlayer) cobwebPlayer.stop(id);
+      updateRow(id, { cobwebN: cobwebN.value });
+    });
+    const cobwebPlay = h('button', {
+      class: 'row-btn play-btn', type: 'button', html: ICONS.play, 'aria-label': 'Play: draw the cobweb a step at a time', 'aria-pressed': 'false',
+      onClick: () => playCobweb(id),
+    });
+    const cobwebOpts = h('span', { class: 'an-row calc-opts' }, h('span', { class: 'an-label' }, 'steps'), cobwebN, cobwebPlay);
+    const cobwebErr = h('div', { class: 'expr-status is-error', hidden: true });
+    const seqBox = h('div', { class: 'expr-seq', hidden: true }, h('div', { class: 'an-row' }, seqBtn, cobwebBtn, cobwebOpts), cobwebErr);
     const listBox = h('div', { class: 'expr-list-value', hidden: true }, listSummary, h('div', { class: 'an-row list-more-row' }, listCount, listMore), listAll);
     const pretty = h('div', { class: 'expr-pretty math', 'aria-hidden': 'true', hidden: true });
     input.addEventListener('focus', () => {
@@ -364,12 +394,13 @@ export function createExprList({
 
     const li = h('li', { class: 'expr-row', dataset: { id: String(id) } },
       h('div', { class: 'row-left' }, swatch, num),
-      h('div', { class: 'expr-main' }, input, pretty, status, listBox, warn, missing, slider, domain, ode, table),
+      h('div', { class: 'expr-main' }, input, pretty, status, listBox, warn, missing, slider, seqBox, domain, ode, table),
       h('div', { class: 'row-actions' }, analysisBtn, tableBtn, delBtn),
       analysisPanel,
     );
     return {
-      li, input, swatch, num, status, warn, listBox, listSummary, listCount, listMore, listAll, listKey: '', domain, domMinInput, domMaxInput, domVar1, domError,
+      li, input, swatch, num, status, warn, listBox, listSummary, listCount, listMore, listAll, listKey: '',
+      seqBox, seqBtn, cobwebBtn, cobwebN, cobwebPlay, cobwebOpts, cobwebErr, domain, domMinInput, domMaxInput, domVar1, domError,
       table, tStart, tStep, tHeadA, tHeadB, tBody, tableErr, tableBtn,
       missing, missingKey: '', slider, range, sMin, sMax, sStep, playBtn, sliderName: null, pretty, prettyKey: null,
       sweepBtn, ode, odeList, odeAdd, odeHint, odeKey: '',
@@ -395,6 +426,7 @@ export function createExprList({
         e.li.remove();
         stopPlaying(id);
         if (secantPlayer) secantPlayer.stop(id);
+        if (cobwebPlayer) cobwebPlayer.stop(id);
         els.delete(id);
         lastEdit.delete(id);
       }
@@ -436,9 +468,11 @@ export function createExprList({
     } else if (r.kind === 'value') {
       text = `= ${formatNumber(r.value)}`;
       cls = 'is-value';
-    } else if (r.kind === 'variable' && !/^\s*[^=]+=\s*[-−]?\s*[\d.]+\s*$/.test(row.text)) {
+    } else if ((r.kind === 'variable' || r.kind === 'start') && !/^\s*[^=]+=\s*[-−]?\s*[\d.]+\s*$/.test(row.text)) {
       text = `= ${formatNumber(r.value)}`;
       cls = 'is-value';
+    } else if (r.kind === 'sequence') {
+      text = `Sequence from ${r.param} = ${r.lowest}`;
     }
     renderPretty(e, row, r, cls === 'is-error' || r.kind === 'error');
     setText(e.status, text);
@@ -462,6 +496,7 @@ export function createExprList({
     }
 
     renderSlider(e, row, r, analysis);
+    renderSequence(e, row, r, analysis);
 
     // Domain for polar / parametric rows (and families of them, Phase 9a).
     const curveKind = r.kind === 'family' ? r.of : r.kind;
@@ -486,7 +521,7 @@ export function createExprList({
     if (r.kind === 'slope') renderOde(e, row);
 
     // Table of values.
-    const tableable = r.kind === 'cartesian' || r.kind === 'cartesian-x' || (r.kind === 'function' && !!r.f);
+    const tableable = r.kind === 'cartesian' || r.kind === 'cartesian-x' || (r.kind === 'function' && !!r.f) || r.kind === 'sequence';
     setHidden(e.tableBtn, !tableable);
     e.tableBtn.setAttribute('aria-pressed', String(!!row.showTable));
     const showTable = tableable && row.showTable;
@@ -500,6 +535,45 @@ export function createExprList({
     const showAnalysis = analysable && row.showAnalysis;
     setHidden(e.analysisPanel, !showAnalysis);
     if (showAnalysis) renderAnalysis(e, row, r, analysis);
+  }
+
+  // Sequences (Phase 9b): the "Plot as sequence" toggle on y = f(x) and one-variable
+  // function rows (always on for recursive sequences, so not shown there), and the cobweb
+  // diagram of a first-order recurrence.
+  function renderSequence(e, row, r, analysis) {
+    const canToggle = r.kind === 'cartesian' || (r.kind === 'function' && r.params && r.params.length === 1);
+    const canCobweb = r.kind === 'sequence' && !!r.cobweb;
+    setHidden(e.seqBox, !canToggle && !canCobweb);
+    if (!canToggle && !canCobweb) return;
+    setHidden(e.seqBtn, !canToggle);
+    e.seqBtn.setAttribute('aria-pressed', String(!!row.sequence));
+    setHidden(e.cobwebBtn, !canCobweb);
+    e.cobwebBtn.setAttribute('aria-pressed', String(!!row.cobweb));
+    const on = canCobweb && row.cobweb;
+    setHidden(e.cobwebOpts, !on);
+    syncInput(e.cobwebN, row.cobwebN);
+    e.cobwebN.placeholder = String(DEFAULT_COBWEB_STEPS);
+    const steps = on ? cobwebSteps(fieldValue(analysis, row.cobwebN)) : {};
+    const bad = on && (steps.error || (row.cobwebN.trim() && fieldValue(analysis, row.cobwebN) === null));
+    setText(e.cobwebErr, bad ? steps.error || `Steps must be a whole number from 1 to 500` : '');
+    setHidden(e.cobwebErr, !bad);
+    const playing = !!(cobwebPlayer && cobwebPlayer.isPlaying(row.id));
+    if (e.cobwebPlay.dataset.state !== String(playing)) {
+      e.cobwebPlay.dataset.state = String(playing);
+      e.cobwebPlay.innerHTML = playing ? ICONS.pause : ICONS.play;
+      e.cobwebPlay.setAttribute('aria-pressed', String(playing));
+      e.cobwebPlay.setAttribute('aria-label', playing ? 'Stop' : 'Play: draw the cobweb a step at a time');
+    }
+    setHidden(e.cobwebPlay, !cobwebPlayer);
+  }
+
+  function playCobweb(id) {
+    if (!cobwebPlayer || !latest) return;
+    const row = rowById(id);
+    if (!row) return;
+    const steps = cobwebSteps(fieldValue(latest.analysis, row.cobwebN));
+    if (steps.error) return;
+    cobwebPlayer.toggle(id, steps.steps);
   }
 
   // A list's elements under the row (D61): the first 3 and last 2 when there are more than
@@ -981,11 +1055,14 @@ export function createExprList({
   function renderTable(e, row, r, analysis) {
     syncInput(e.tStart, row.tableStart);
     syncInput(e.tStep, row.tableStep);
-    const inVar = r.kind === 'cartesian-x' ? 'y' : 'x';
-    const outVar = r.kind === 'cartesian-x' ? 'x' : r.kind === 'function' ? `${r.name}(x)` : 'y';
+    const seq = r.kind === 'sequence';
+    const param = seq ? r.param : r.kind === 'function' && r.params ? r.params[0] : 'x';
+    const inVar = r.kind === 'cartesian-x' ? 'y' : param;
+    const outVar = r.kind === 'cartesian-x' ? 'x' : r.kind === 'function' || seq ? `${r.name}(${param})` : 'y';
     setText(e.tHeadA, inVar);
     setText(e.tHeadB, outVar);
-    const start = row.tableStart.trim() ? analysis.evaluate(row.tableStart) : { value: 0 };
+    e.tStart.placeholder = seq ? String(r.lowest) : '0';
+    const start = row.tableStart.trim() ? analysis.evaluate(row.tableStart) : { value: seq ? r.lowest : 0 };
     const step = row.tableStep.trim() ? analysis.evaluate(row.tableStep) : { value: 1 };
     const err = start.error ? `Start: ${start.error.message}` : step.error ? `Step: ${step.error.message}` : '';
     setHidden(e.tableErr, !err);

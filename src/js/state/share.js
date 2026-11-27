@@ -33,7 +33,7 @@ function projectObject(state) {
 // ---- list positions (D61) -------------------------------------------------------------------
 // The text fields of a project that can hold expressions.
 const ROW_FIELDS = ['text', 'domainMin', 'domainMax', 'sliderMin', 'sliderMax', 'sliderStep', 'atX', 'intFrom', 'intTo',
-  'tableStart', 'tableStep', 'riemannN', 'taylorN', 'taylorAt', 'secantH'];
+  'tableStart', 'tableStep', 'riemannN', 'taylorN', 'taylorAt', 'secantH', 'cobwebN'];
 
 // Shift every list position in a project by delta (+1: it was made counting from 0 and
 // is opened counting from 1). Returns { state, count } with the number of fields changed.

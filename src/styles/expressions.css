@@ -145,6 +145,7 @@
 
 /* Domain (θ or t range) */
 .expr-domain { margin: 0 4px 6px; }
+.expr-seq { margin: -4px 4px 6px; } /* Phase 9b */
 .domain-row {
   display: flex;
   align-items: center;

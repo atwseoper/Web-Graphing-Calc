@@ -26,6 +26,7 @@ import { setUpInstall } from './ui/install.js';
 import { setUpOffline } from './ui/offline.js';
 import { createPointDrag } from './ui/point-drag.js';
 import { createSecantPlayer } from './ui/secant-play.js';
+import { createCobwebPlayer } from './ui/cobweb-play.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -67,8 +68,9 @@ const pointDrag = createPointDrag({
   history: { beginGroup: () => undoHistory.beginGroup(), endGroup: () => undoHistory.endGroup() },
 });
 const secantPlayer = createSecantPlayer(); // secant → tangent play button (Phase 6b)
+const cobwebPlayer = createCobwebPlayer(); // cobweb diagram play button (Phase 9b)
 const graph = createGraphView({
-  canvas: $('graph-canvas'), store, getAnalysis, getFits, pointDrag, secantPlayer,
+  canvas: $('graph-canvas'), store, getAnalysis, getFits, pointDrag, secantPlayer, cobwebPlayer,
 });
 $('btn-zoom-in').addEventListener('click', () => graph.zoomBy(1.5));
 $('btn-zoom-out').addEventListener('click', () => graph.zoomBy(1 / 1.5));
@@ -76,9 +78,13 @@ $('btn-home').addEventListener('click', () => graph.home());
 $('btn-fit').addEventListener('click', () => graph.fit());
 
 const exprList = createExprList({
-  listEl: $('expr-list'), addBtn: $('btn-add-row'), store, graph, secantPlayer,
+  listEl: $('expr-list'), addBtn: $('btn-add-row'), store, graph, secantPlayer, cobwebPlayer,
 });
 secantPlayer.onChange(() => {
+  graph.requestDraw();
+  exprList.refresh();
+});
+cobwebPlayer.onChange(() => {
   graph.requestDraw();
   exprList.refresh();
 });

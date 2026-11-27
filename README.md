@@ -4,7 +4,7 @@ A modern 2D graphing calculator that ships as **one self-contained HTML file**. 
 
 **Live:** https://atwseoper.github.io/Web-Graphing-Calc/
 
-Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, Phase 5 makes the installed app work offline and has shared links ask before they open, Phase 6 adds draggable points, Riemann sums, Taylor polynomials and secant → tangent, Phase 7 adds log axes and statistics, and Phase 8 reads data points off a photo of a graph. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
+Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphing, analysis and solving, data and curve fitting, polish and extras) are complete, Phase 5 makes the installed app work offline and has shared links ask before they open, Phase 6 adds draggable points, Riemann sums, Taylor polynomials and secant → tangent, Phase 7 adds log axes and statistics, Phase 8 reads data points off a photo of a graph, and Phase 9 adds lists, curve families and sequences. See [docs/DESIGN.md](docs/DESIGN.md) for the full design, feature list and roadmap.
 
 ## Features
 
@@ -12,6 +12,8 @@ Status: version 1.0, with the version 2 roadmap under way. Phases 0–4 (graphin
 - Implicit curves (x² + y² = 9), shaded inequalities (y < x², 0 < y < x), slope fields with solution curves (y′ = x − y)
 - Expressions shown as written maths (fractions, powers, roots, Σ) under each row
 - Variables, functions and sliders (with a play button and step); piecewise conditions `{x < 0: -x, x}`; `f'(x)`; Σ and Π
+- Lists and ranges (`[1, 2, 3]`, `[1...10]`), indexing `L[2]`, list functions (mean, median, stdev …); a list in a row draws a family of curves, and `(L, M)` draws points; data set columns as lists (`D_1.x`)
+- Recursive sequences (`u(n) = 2u(n − 1) + 1`, `u(0) = 1`) drawn as points, with cobweb diagrams for first-order recurrences
 - Graph analysis: tap a curve to see its roots, extrema, intercepts and intersections; derivative, tangent, integrals with error estimates, polar area
 - Statistics: summary statistics of each column (mean, median, both standard deviations, quartiles by the TI-84 method or interpolated, IQR, correlation r), histograms and box plots; normal, t, χ², binomial and Poisson distribution functions (pdf, cdf, inverse), with probabilities shaded on the graph and discrete distributions drawn as stems
 - Equation solver: single equations, solve-for-any-variable, polynomials (complex roots), linear systems and non-linear systems
