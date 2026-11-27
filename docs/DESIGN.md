@@ -1,6 +1,6 @@
 # Web Graphing Calculator – Design Document
 
-**Status:** v1.0 – Phase 8 (photo digitiser) complete; version 2 roadmap Phases 9–10 planned · **Updated:** 21 November 2026
+**Status:** v1.0 – Phase 8 (photo digitiser) complete; Phase 9 (lists and sequences) in progress, Phase 10 planned · **Updated:** 27 November 2026
 
 Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Projects / Web Graphing Calculator*. This file is now the source of truth.
 
@@ -68,6 +68,7 @@ Earlier drafts (v0.1, v0.2) are kept as Google Docs in the Drive folder *Project
 | D58 | Phase 8a, the digitiser's mapping (`data/digitise.js`). Every calibration becomes one 3 × 3 homography from image pixels to axis coordinates (log₁₀ of the value on a log axis). *Axes*: the x value of a point is read along the x axis, moving parallel to the y axis and vice versa (the linear part maps x₂ − x₁ to (Δu, 0) and y₂ − y₁ to (0, Δv)), so a rotated or skewed image works and the reference points needn't be at 0 or where the axes cross; axes within about 3° of parallel are refused. *Known length* is always linear (a length in a photo has no meaning on a log axis); the origin's values default to (0, 0) and +y is a quarter turn anticlockwise from +x as seen. *Four points*: the 8 × 8 system is solved on normalised coordinates (centred, mean distance √2) so that pixel values in the thousands and values like 10⁻⁶ or 10⁷ stay well conditioned; three points in a line (on the photo or in their values) and point orders that would fold the photo over (w changing sign across the four points, usually two points' values swapped) are refused with a message naming the points. Image points beyond the photo's horizon map to nothing. Digitised values are rounded to one decimal place below the first significant digit of what one image pixel is worth at that point, so they carry no false precision, and the data set is sorted by x. A faint grid of the calibrated axes (1-2-5 per decade on log axes over three decades or fewer) is drawn over the photo so the calibration can be checked by eye. | 21 Nov 2026 |
 | D59 | Phase 8b, the digitising view (`ui/digitiser.js`). “From a photo” is a fourth start option on the Data tab (an `image/*` picker, which offers the camera on phones); dropping an image on the page or pasting one (Ctrl+V on the Data tab) opens it too. The image is decoded with EXIF rotation applied, kept at most 4096 px on its longest side (canvas limits on phones), and only in a canvas that is emptied on closing; it never enters the state. The view is full screen, with the photo above and a panel below (beside it in landscape ≥ 720 px). Step 1, Calibrate: method, linear/log per axis (hidden for known length, which is linear), a row per reference point with its values, and messages from 8a naming the points at fault; a tap on a marker still to be placed places the active one there, so x₁ and y₁ can share the origin. The bar's main button is Next, enabled once the calibration works. Step 2, Tap points: the button becomes “Add N points”. Touch: tap places; press and hold (300 ms) shows a magnifier (4 × the current zoom, above the finger, with the value under the crosshair once calibrated) and places on release; dragging a marker moves it by the finger's movement rather than to the finger, so it is never hidden; one finger pans, two pinch-zoom. Mouse: click, drag, wheel. Keyboard: arrows nudge (Shift ×10), Delete, Ctrl+Z / Ctrl+Y, Escape. Above 3 × zoom pixels are drawn sharp, for aiming at their edges. Digitised points are drawn as rings so the photo's own marks show through. The view has its own undo for placing, moving and deleting markers (not the project's, which only gets the finished data set as one step). Closing with anything placed takes a second tap. At most 2,000 points per photo. | 21 Nov 2026 |
 | D60 | Phase 8c, digitiser guidance. *Axes* calibrations whose two axis lines come out less than 60° apart on the photo (`WARN_AXES_ANGLE`) are still accepted, but with an amber warning in place of “Calibrated” giving the angle and asking whether x₁/x₂ and y₁/y₂ are on their axes rather than on the curve; under about 3° is still refused (D58). Real graphs, even photographed at a slant, rarely have axes under 60° apart, so a smaller angle almost always means markers on the curve (seen in testing: x₁ and y₂ placed on y = x², 10° apart). Known length and four points are unaffected. The calibrate step gains a collapsible “How to use this” guide for the chosen method (when to use it, numbered steps, a note): open when the view opens, closed automatically when the first marker is placed unless it has been toggled by hand. The axes hints now say “on the x axis itself (the horizontal axis line, not the curve)”, and the Data help page says the same. | 25 Nov 2026 |
+| D61 | Phase 9 open questions settled (section 9, Q23–Q30), with one change to the plan: data-set columns in expressions move from “later” (7.2, Q12) into Phase 9a. *Indexing:* `L[2]` picks an element, counting from 1 by default (L = [10, 20, 30] gives 20); `L[2...3]` and `L[[1, 3]]` pick several. Settings can switch to counting from 0. That setting is the device's, like the keypad (not undoable, not taken from projects), but project files and share links record their creator's choice, and a project made with the other setting has every position in it shifted by one as it opens (`L[2]` → `L[1]`, `L[k]` → `L[k-1]`, ranges and lists of positions item by item), with the open toast saying so. A position beyond the end, or that isn't a whole number, gives undefined with a warning on the row. *Families:* two lists in one row pair up element by element (`y = a·x + b` with a = [1, 2, 3] and b = [0, 1, 2] draws 3 curves); lists of different lengths use the shorter length with a warning; a family over 50 curves draws the first 50 with a warning. *Data columns:* a data set's columns are lists written `D_1.x`, `D_1.y` (shown D₁.x), D with the data set's number; with only one data set, `D.x` works too. Points left out in the table are left out of the lists, as they are of fits; a row is used when every column that has numbers in it has a number in that row, so x and y stay paired. Columns are live: editing the table updates every expression that uses them. *Sequences:* a sequence starts at the lowest n given a starting value (`u(1) = 1` starts at n = 1; u(0) is then undefined). *Showing lists:* a long list shows its first 3 and last 2 elements and its length (`[1, 4, 9, …, 998001, 1000000]`, 1,000 elements), with “Show all” opening the full list, in Graph rows and the Calc tab alike. Phase 9 is three pull requests: 9a lists and curve families, 9a-2 data columns, 9b sequences. | 27 Nov 2026 |
 
 ## 1. Purpose
 
@@ -282,7 +283,7 @@ build/
 | 6 – Drag & calculus ✅ | 6a draggable points; 6b Riemann sums, Taylor polynomials, secant → tangent | Hands-on exploration and teaching |
 | 7 – Axes & statistics ✅ | 7a log and log-log axes; 7b summary statistics, histograms, box plots, distribution functions | Parity with a handheld's statistics |
 | 8 – Photo digitiser ✅ | Image import, axis calibration, tapping points into a data set | Real-world data straight into fitting |
-| 9 – Lists & sequences | 9a lists, ranges and curve families; 9b recursive sequences, term plots, cobweb diagrams | Richer expressions |
+| 9 – Lists & sequences | 9a lists, ranges and curve families; 9a-2 data-set columns as lists (D61); 9b recursive sequences, term plots, cobweb diagrams | Richer expressions |
 | 10 – Notes & examples | 10a notes rows, folders and row reordering; 10b built-in examples gallery | Version 2.0 |
 
 Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, self-contained work first: Phase 5 means every later release reaches installed apps through the update toast, and the shared-link confirmation is in place well before notes arrive. Phase 6 builds on code that already exists (sliders, the play mechanics, `derive.js`, the analysis panel). Log axes (7a) come before the digitiser, so calibrating a log-scaled image can reuse the same mapping. Lists (Phase 9) come late because they change the expression engine everywhere. Notes and examples (Phase 10) come last, so the examples can show off everything version 2 adds.
@@ -332,12 +333,14 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 - Then tap to add points; points can be dragged and deleted. “Done” makes a new data set (x, y), ready for fitting.
 - The image itself is never stored, in project files or anywhere else; only the points are kept (Q14). The mapping is a pure module, `data/digitise.js`, and is unit-tested.
 
-**Phase 9 – Lists, curve families and sequences (two PRs)**
+**Phase 9 – Lists, curve families and sequences (three PRs: 9a, 9a-2, 9b; decisions in D61)**
 - *9a Lists.*
   - Square-bracket lists `[1, 2, 3]` and ranges `[1...10]` and `[0, 0.5...5]`; list variables `L = […]` (single letters, as D10 requires).
   - Arithmetic and functions apply to each element. A row that uses a list draws one curve per element, in shades of the row's colour. `(L, M)` plots the pairs as points.
   - List functions: `length`, `mean`, `median`, `stdev`, plus the existing `min` and `max`. `sum(L)` with one argument totals a list; with four it is still Σ (D17, Q17).
   - Limits: 10,000 elements per list and 50 curves per family. Analysis points are shown only for single curves.
+  - Indexing `L[2]` (from 1, or from 0 by a device setting), slices `L[2...3]`; pairing, length mismatches and the curve cap as D61.
+- *9a-2 Data columns (D61, moved here from 7.2).* `D_1.x`, `D_1.y` (or `D.x` with one data set) are lists of a data set's columns, without the points left out of fits; they update as the table is edited.
 - *9b Sequences.*
   - A function that refers to itself at n − 1 (or n − 2 …) together with starting-value rows such as `u(0) = 0.2` is a recursive sequence, not a circular definition. It is evaluated with memoisation for whole n ≥ 0, up to n = 10⁵.
   - A per-row “Plot as sequence” toggle draws terms as points (n, u(n)) instead of a curve; it is switched on automatically for recursive rows, and explicit sequences such as `u(n) = 1/n` can use it too (Q18). Sequences evaluate in the Calc tab (`u(50)`).
@@ -357,7 +360,6 @@ Phases 5–10 make up the version 2 roadmap (D46). The order puts the small, sel
 
 ### 7.2 Later (not scheduled)
 - Hypothesis tests and confidence intervals (z, t, χ²) on data sets (Q11).
-- Data-set columns usable in expressions, as lists, once Phase 9a exists (Q12).
 - Opening `.json` project files directly in the installed app (manifest file handling); these would ask first, under D47.
 
 ## 8. Expression syntax (as implemented)
@@ -409,7 +411,7 @@ Version 2 questions, all settled on 18 November 2026 (D48):
 *Phase 7*
 10. ~~Quartile method~~ – TI-84 by default, linear interpolation as a choice on the card, saved with the project.
 11. ~~Hypothesis tests and confidence intervals~~ – later, if wanted (7.2).
-12. ~~Data-set columns in expressions~~ – after Phase 9, as lists (7.2).
+12. ~~Data-set columns in expressions~~ – after Phase 9, as lists (7.2). *Brought forward into Phase 9a: Q28, D61.*
 13. ~~Slope fields and implicit curves on log axes~~ – everything works, including slope fields.
 
 *Phase 8*
@@ -421,6 +423,17 @@ Version 2 questions, all settled on 18 November 2026 (D48):
 17. ~~Totalling a list~~ – `sum(L)`, told apart from Σ by the number of arguments.
 18. ~~Plotting a row as a sequence~~ – a per-row toggle, on automatically for recursive rows.
 19. ~~Bifurcation diagram~~ – yes, if 9b has room; otherwise a later PR.
+
+Further Phase 9 questions, settled on 27 November 2026 (D61):
+
+23. ~~Picking one element of a list~~ – `L[2]`, counting from 1, with a setting to count from 0.
+24. ~~Where the counting setting lives~~ – on the device; project files record their creator's choice and positions are converted on opening.
+25. ~~Two lists in one row~~ – paired element by element.
+26. ~~Lists of different lengths~~ – the shorter length, with a warning.
+27. ~~More than 50 curves in a family~~ – the first 50, with a warning.
+28. ~~Data-set columns in expressions~~ – in Phase 9a (9a-2), written `D_1.x`, left-out points excluded (this replaces Q12's “later”).
+29. ~~Where a sequence starts~~ – at the lowest n given a starting value.
+30. ~~Showing long lists~~ – first 3 and last 2 elements with the length, expandable.
 
 *Phase 10*
 20. ~~`"` at the start of a row makes a note~~ – yes.
